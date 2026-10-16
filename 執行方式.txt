@@ -1,0 +1,11 @@
+
+直接執行:
+D:\github\herdr\target\release\herdr.exe
+
+或是
+.\target\release\herdr.exe --version
+.\target\release\herdr.exe
+
+重build
+cargo clean
+cargo build --release

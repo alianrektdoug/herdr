@@ -1268,7 +1268,10 @@ fn navigator_distinguishes_unnamed_terminals_on_numbered_tabs() {
         .filter(|row| matches!(row.target, ClientNavigatorTarget::Pane { .. }))
         .map(|row| row.label.as_str())
         .collect::<Vec<_>>();
-    assert_eq!(labels, ["terminal · 1", "terminal · 2", "logs"]);
+    assert_eq!(
+            labels,
+            ["terminal(終端機) · 1", "terminal(終端機) · 2", "logs"]
+        );
 }
 
 #[test]

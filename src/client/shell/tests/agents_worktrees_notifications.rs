@@ -257,7 +257,7 @@ fn duplicate_repo_parents_remain_visible_and_focusable_when_collapsed() {
             let Some(ClientShellOverlay::ContextMenu(menu)) = state.overlay.as_ref() else {
                 panic!("repository workspace context menu");
             };
-            assert_eq!(menu.items()[1].label, "Close");
+            assert_eq!(menu.items()[1].label, crate::ui::bilingual("Close"));
             assert_eq!(
                 menu.items()
                     .iter()
@@ -278,7 +278,7 @@ fn duplicate_repo_parents_remain_visible_and_focusable_when_collapsed() {
                 assert!(close.actions.is_empty());
                 assert!(matches!(state.overlay.as_ref(),
                     Some(ClientShellOverlay::ConfirmClose(confirm))
-                        if confirm.title == "Close workspace?" && !confirm.close_group));
+                        if confirm.title == "Close workspace?(關閉工作區？)" && !confirm.close_group));
                 close = state.handle_input_bytes(b"\r");
             }
             assert!(matches!(close.actions.as_slice(),
@@ -1327,7 +1327,7 @@ fn worktree_action_errors_expire_without_more_input() {
         crate::input::KeybindMatch::Action(crate::input::KeybindAction::RemoveWorktree),
         &mut guard,
     );
-    let message = "This workspace is not a Herdr-managed worktree checkout.";
+    let message = "This workspace is not a Herdr-managed worktree checkout.(此工作區不是 Herdr 管理的工作樹簽出。)";
     assert_eq!(state.endpoint_error.as_deref(), Some(message));
 
     let deadline = state.endpoint_error_deadline.expect("deadline");

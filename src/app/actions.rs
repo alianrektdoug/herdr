@@ -152,11 +152,11 @@ pub fn notification_context(
     ws_idx: usize,
     pane_id: PaneId,
 ) -> String {
-    let mut context = format!("workspace(工作區) {}: {}", ws_idx + 1, workspace_label);
+    let mut context = format!("{} · {}", workspace_label, ws_idx + 1);
     if ws.tabs.len() > 1 {
         if let Some(tab_idx) = ws.find_tab_index_for_pane(pane_id) {
             if let Some(label) = ws.tab_display_name(tab_idx) {
-                context.push_str(&format!(" · tab(分頁): {label}"));
+                context.push_str(&format!(" · {label}"));
             }
         }
     }
@@ -2174,7 +2174,7 @@ mod tests {
 
         assert_eq!(
             notification_context(&state.workspaces[0], "__herdr_projects__", 0, root),
-            "workspace(工作區) 1: __herdr_projects__"
+            "__herdr_projects__ · 1"
         );
     }
 
@@ -4302,7 +4302,7 @@ mod tests {
         assert_eq!(toast.title, "v0.5.0 available");
         assert_eq!(
             toast.context,
-            "detach, run `herdr update`, then run Herdr again to reconnect"
+            "detach, run `herdr update`, then run Herdr again to reconnect(中斷連接，執行 `herdr update`，再重新執行 Herdr 以連線)"
         );
     }
 
@@ -4323,7 +4323,7 @@ mod tests {
         let toast = state.toast.as_ref().expect("update toast");
         assert_eq!(
             toast.context,
-            "detach, run `brew update && brew upgrade herdr`, then run Herdr again to reconnect"
+            "detach, run `brew update && brew upgrade herdr`, then run Herdr again to reconnect(中斷連接，執行 `brew update && brew upgrade herdr`，再重新執行 Herdr 以連線)"
         );
     }
 

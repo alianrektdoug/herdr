@@ -1911,7 +1911,7 @@ mod tests {
 
         assert_eq!(
             app.state.toast.as_ref().map(|toast| toast.context.as_str()),
-            Some("workspace(工作區) 1: __herdr_projects__")
+            Some("__herdr_projects__ · 1")
         );
 
         for (_, runtime) in app.terminal_runtimes.drain() {
@@ -2015,7 +2015,7 @@ mod tests {
                 .first()
                 .and_then(|delivery| delivery.toast.as_ref())
                 .map(|toast| toast.context.as_str()),
-            Some("workspace(工作區) 1: __herdr_projects__")
+            Some("__herdr_projects__ · 1")
         );
 
         for (_, runtime) in app.terminal_runtimes.drain() {
@@ -2506,7 +2506,7 @@ mod tests {
 
         assert_eq!(
             app.state.toast.as_ref().map(|toast| toast.context.as_str()),
-            Some("workspace(工作區) 1: __herdr_original__")
+            Some("__herdr_original__ · 1")
         );
     }
 }

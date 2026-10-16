@@ -318,6 +318,6 @@ mod tests {
         );
         let global = &groups[0].1;
         assert_eq!(global[0].0, "ctrl+space / ctrl+s");
-        assert_eq!(global[0].1, "prefix mode");
+        assert_eq!(global[0].1, crate::ui::bilingual("prefix mode"));
     }
 }

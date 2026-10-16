@@ -11,6 +11,7 @@ pub(crate) enum ShutdownReason {
     Signal(ServerQuitSignal),
     ApiStop { caller: Option<String> },
     HostShutdown,
+    LastClientDetached,
     Unknown,
 }
 
@@ -23,6 +24,9 @@ impl std::fmt::Display for ShutdownReason {
             } => write!(f, "server.stop request from {caller}"),
             Self::ApiStop { caller: None } => f.write_str("server.stop request"),
             Self::HostShutdown => f.write_str("host shutdown"),
+            Self::LastClientDetached => {
+                f.write_str("last client detached (server.stop_on_last_detach)")
+            }
             Self::Unknown => f.write_str("unknown"),
         }
     }

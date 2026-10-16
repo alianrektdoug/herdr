@@ -3,11 +3,11 @@
 本 repo 是 [herdrdev/herdr](https://github.com/herdrdev/herdr) 的 fork，授權沿用 Apache
 License 2.0（見 `LICENSE`）。依 Apache-2.0 第 4(b) 條，以下列出本 fork 相對上游的修改。
 
-基準版本：**v0.9.0**（上游 commit `b99002ac`）
+基準版本：**v0.9.5**（上游 commit `2ecf19a9`）
 
 This is a fork of [herdrdev/herdr](https://github.com/herdrdev/herdr), licensed under the
 Apache License 2.0 (see `LICENSE`). Per Apache-2.0 §4(b), the modifications relative to
-upstream are listed below. Base: **v0.9.0** (upstream commit `b99002ac`).
+upstream are listed below. Base: **v0.9.5** (upstream commit `2ecf19a9`).
 
 ---
 
@@ -60,12 +60,34 @@ stop_on_last_detach = false
 `true` 時，最後一個 client 離開（例如關掉視窗）就一併停止 server，不留背景程序。
 預設 `false`，維持上游行為。
 
+上游 v0.9.1 起將 server 的 `should_quit: Arc<AtomicBool>` 重構為
+`src/server/shutdown.rs` 的 `ServerStop` + `ShutdownReason`，目的是記錄「為何停止」。
+本 fork 因此新增一個變體並改走新 API，讓關閉日誌能正確顯示原因：
+
+```rust
+// src/server/shutdown.rs
+pub(crate) enum ShutdownReason {
+    Signal(ServerQuitSignal),
+    ApiStop { caller: Option<String> },
+    HostShutdown,
+    LastClientDetached,   // 本 fork 新增
+    Unknown,
+}
+
+// src/server/headless.rs  stop_if_last_client_left()
+self.server_stop.request(ShutdownReason::LastClientDetached);
+```
+
 When `true`, the server stops once the last client detaches, instead of staying resident.
 Defaults to `false`, preserving upstream behaviour.
 
 ## 4. 其他 / Misc
 
 - `.gitignore` 加入 `/.zig-cache/`：`build.rs` 編譯 vendored libghostty-vt 時的本機快取。
+- `src/client/shell/render.rs`：COPY 模式列的 footer 寬度原本用 `footer.len()`。
+  那是 byte 長度，對純 ASCII 正確，但本 fork 的 footer 含中文（UTF-8 每字 3 bytes、
+  顯示寬度 2）會算出約 1.5 倍的寬度把輸入欄壓掉。改用專案現成的
+  `display_width()`（底層是 `unicode-width`），` COPY ` 的 marker 位移也改成依寬度計算。
 
 ---
 
@@ -86,12 +108,18 @@ git switch zh-tw && git rebase master
 
 ## Windows 建置注意 / Building on Windows
 
-`build.rs` 會呼叫 Zig 編譯 vendored libghostty-vt。Zig 的路徑**不可含空白**，否則
-`Step/Run.zig` 的 `assert(!isAbsolute(child_cwd_rel))` 會 panic。請把 Zig 裝在無空白的
-路徑，並讓快取目錄也落在無空白路徑上：
+`build.rs` 會呼叫 Zig 編譯 vendored libghostty-vt。
+
+**v0.9.1 起要求 Zig 0.16.0**（`vendor/libghostty-vt/build.zig.zon` 的
+`.minimum_zig_version`）。用 0.15.2 會在 `src/build/zig.zig` 停下來：
+`Your Zig version v0.15.2 does not meet the required build version of v0.16.0`。
+
+Zig 的路徑**不可含空白**，否則 `Step/Run.zig` 的
+`assert(!isAbsolute(child_cwd_rel))` 會 panic。請把 Zig 裝在無空白的路徑，
+並讓快取目錄也落在無空白路徑上：
 
 ```
-ZIG=C:/Tools/zig-0.15.2/zig.exe
+ZIG=D:/Tools/zig-0.16.0/zig.exe
 ZIG_GLOBAL_CACHE_DIR=D:/zig-cache
 ```
 

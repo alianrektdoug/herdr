@@ -1055,9 +1055,10 @@ impl HeadlessServer {
             return;
         }
         info!("last client detached; stopping server (server.stop_on_last_detach)");
-        // Hand off to the main loop's quit check so pending events are drained
-        // and `initiate_shutdown` runs from its single existing call site.
-        self.app.state.should_quit = true;
+        // Record the reason on the shared stop flag so the shutdown log says why
+        // the server stopped; the main loop's quit check then drains pending
+        // events and runs `initiate_shutdown` from its single existing call site.
+        self.server_stop.request(ShutdownReason::LastClientDetached);
     }
 
     /// Accepts pending client connections from the non-blocking listener.

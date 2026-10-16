@@ -66,7 +66,7 @@ pub(super) fn render_expanded(
         buffer,
         area,
         &rows,
-        agent_view_label.map(|_| " no matching agents"),
+        agent_view_label.map(|_| " no matching agents(找不到符合的代理程式)"),
         config,
         agent_scroll,
         hits,

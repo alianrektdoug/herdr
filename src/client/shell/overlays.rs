@@ -24,6 +24,10 @@ pub(crate) struct OverlayRender {
     pub(crate) settings_popup: Rect,
     pub(crate) settings_tabs: Vec<(Rect, ClientSettingsSection)>,
     pub(crate) settings_choices: Vec<(Rect, usize)>,
+    pub(crate) settings_scroll_left: Rect,
+    pub(crate) settings_scroll_track: Rect,
+    pub(crate) settings_scroll_right: Rect,
+    pub(crate) settings_max_horizontal_scroll: usize,
     pub(crate) product_announcement_scrollbar: Rect,
     pub(crate) product_announcement_scroll_metrics: Option<crate::pane::ScrollMetrics>,
     pub(crate) product_announcement_max_scroll: usize,
@@ -354,9 +358,9 @@ fn render_release_notes_overlay(
         subtitle_area.y,
         subtitle_area.width,
         if notes.preview {
-            "update ready"
+            "update ready(更新已就緒)"
         } else {
-            "what's new in this release"
+            "what's new in this release(本版本的新功能)"
         },
         base.fg(p.overlay1),
     );
@@ -369,7 +373,7 @@ fn render_release_notes_overlay(
     button(
         b,
         close,
-        " esc close ",
+        " esc close(關閉) ",
         Style::default()
             .fg(contrast(p))
             .bg(p.accent)
@@ -398,10 +402,10 @@ fn render_release_notes_overlay(
 
     if let Some(footer_area) = stack.footer {
         let footer_line = ratatui::text::Line::from(vec![
-            ratatui::text::Span::styled(" scroll ", base.fg(p.overlay0)),
-            ratatui::text::Span::styled("wheel ↑↓", base.fg(p.text)),
+            ratatui::text::Span::styled(" scroll(捲動) ", base.fg(p.overlay0)),
+            ratatui::text::Span::styled("wheel(滾輪) ↑↓", base.fg(p.text)),
             ratatui::text::Span::styled("  ·  ", base.fg(p.overlay0)),
-            ratatui::text::Span::styled("close", base.fg(p.overlay0)),
+            ratatui::text::Span::styled("close(關閉)", base.fg(p.overlay0)),
             ratatui::text::Span::styled(" esc / enter ", base.fg(p.text)),
         ]);
         ratatui::widgets::Widget::render(
@@ -464,9 +468,9 @@ fn render_product_announcement_overlay(
         base.fg(p.text).add_modifier(Modifier::BOLD),
     );
     let subtitle = if announcement.preview {
-        "product announcement preview"
+        "product announcement preview(產品公告預覽)"
     } else {
-        "product announcement"
+        "product announcement(產品公告)"
     };
     put_text(
         b,
@@ -485,7 +489,7 @@ fn render_product_announcement_overlay(
     button(
         b,
         close,
-        " esc close ",
+        " esc close(關閉) ",
         Style::default()
             .fg(contrast(p))
             .bg(p.accent)
@@ -514,10 +518,10 @@ fn render_product_announcement_overlay(
 
     if let Some(footer_area) = stack.footer {
         let footer_line = ratatui::text::Line::from(vec![
-            ratatui::text::Span::styled(" scroll ", base.fg(p.overlay0)),
-            ratatui::text::Span::styled("wheel ↑↓", base.fg(p.text)),
+            ratatui::text::Span::styled(" scroll(捲動) ", base.fg(p.overlay0)),
+            ratatui::text::Span::styled("wheel(滾輪) ↑↓", base.fg(p.text)),
             ratatui::text::Span::styled("  ·  ", base.fg(p.overlay0)),
-            ratatui::text::Span::styled("close", base.fg(p.overlay0)),
+            ratatui::text::Span::styled("close(關閉)", base.fg(p.overlay0)),
             ratatui::text::Span::styled(" esc / enter ", base.fg(p.text)),
         ]);
         ratatui::widgets::Widget::render(
@@ -627,7 +631,7 @@ fn render_onboarding_overlay(
     button(
         b,
         primary,
-        " ↵ continue ",
+        " ↵ continue(繼續) ",
         Style::default()
             .fg(contrast(p))
             .bg(p.accent)
@@ -667,14 +671,14 @@ fn render_rename_overlay(
         &v.input,
         Style::default().fg(p.text).bg(p.surface0),
     );
-    let rs = row(i, &[8, 10, 12], 2, 3);
+    let rs = row(i, &[12, 16, 18], 2, 3);
     let [save, clear, cancel] = rs.as_slice() else {
         return None;
     };
     button(
         b,
         *save,
-        " ↵ save ",
+        " ↵ save(儲存) ",
         Style::default()
             .fg(contrast(p))
             .bg(p.accent)
@@ -684,8 +688,8 @@ fn render_rename_overlay(
         .fg(p.text)
         .bg(p.surface0)
         .add_modifier(Modifier::BOLD);
-    button(b, *clear, " ^c clear ", n);
-    button(b, *cancel, " esc cancel ", n);
+    button(b, *clear, " ^c clear(清除) ", n);
+    button(b, *cancel, " esc cancel(取消) ", n);
     Some(OverlayRender {
         area: q,
         primary: *save,
@@ -737,14 +741,14 @@ fn render_navigator_overlay(
         format!(
             " / {}",
             match f {
-                ClientNavigatorFilter::Blocked => "blocked",
-                ClientNavigatorFilter::Working => "working",
-                ClientNavigatorFilter::Idle => "idle",
-                ClientNavigatorFilter::Done => "done",
+                ClientNavigatorFilter::Blocked => crate::ui::bilingual("blocked"),
+                ClientNavigatorFilter::Working => crate::ui::bilingual("working"),
+                ClientNavigatorFilter::Idle => crate::ui::bilingual("idle"),
+                ClientNavigatorFilter::Done => crate::ui::bilingual("done"),
             }
         )
     } else if n.query.is_empty() {
-        " / search agents and terminals".to_owned()
+        " / search agents and terminals(搜尋代理程式與終端機)".to_owned()
     } else {
         format!(" / {}", n.query)
     };
@@ -755,9 +759,9 @@ fn render_navigator_overlay(
     let count = format!(
         "{terminal_count} {}",
         if terminal_count == 1 {
-            "terminal"
+            "terminal(終端機)"
         } else {
-            "terminals"
+            "terminals(終端機)"
         }
     );
     put_text(
@@ -943,7 +947,7 @@ fn render_navigator_overlay(
                     rect.right() - columns + 1,
                     rect.y,
                     11,
-                    r.agent.as_deref().unwrap_or("terminal"),
+                    r.agent.as_deref().unwrap_or("terminal(終端機)"),
                     meta_style,
                 );
             }
@@ -1027,9 +1031,9 @@ fn render_navigator_overlay(
         i.bottom() - 1,
         i.width,
         if n.search_focused {
-            " search type · move ↑↓/ctrl+n/p · open enter · back esc"
+            " search type(輸入搜尋) · move(移動) ↑↓/ctrl+n/p · open(開啟) enter · back(返回) esc"
         } else {
-            " ↑↓/j/k rows · ←→ workspace · / search · a/b/w/i/d filter · enter open · esc close"
+            " ↑↓/j/k rows(列) · ←→ workspace(工作區) · / search(搜尋) · a/b/w/i/d filter(篩選) · enter open(開啟) · esc close(關閉)"
         },
         Style::default().fg(p.overlay0).bg(p.panel_bg),
     );
@@ -1063,11 +1067,15 @@ fn help_lines(
     );
     let key_width = groups
         .iter()
-        .flat_map(|(_, entries)| entries.iter().map(|(key, _)| key.chars().count()))
+        .flat_map(|(_, entries)| {
+            entries
+                .iter()
+                .map(|(key, _)| usize::from(display_width(key)))
+        })
         .max()
         .unwrap_or(8);
     if groups.is_empty() {
-        let message = " no matching keybinds";
+        let message = " no matching keybinds(找不到符合的快捷鍵)";
         return vec![(
             message.chars().count(),
             Line::from(Span::styled(
@@ -1080,7 +1088,7 @@ fn help_lines(
     let mut lines = Vec::new();
     for (group, entries) in groups {
         lines.push((
-            group.len() + 1,
+            usize::from(display_width(group)) + 1,
             Line::from(Span::styled(
                 format!(" {group}"),
                 Style::default()
@@ -1091,7 +1099,8 @@ fn help_lines(
         ));
         for (key, label) in entries {
             let padded_key = format!(" {key:<key_width$} ");
-            let width = padded_key.chars().count() + label.chars().count();
+            let width =
+                usize::from(display_width(&padded_key)) + usize::from(display_width(&label));
             lines.push((
                 width,
                 Line::from(vec![
@@ -1132,20 +1141,20 @@ fn render_help_overlay(
         i.x,
         i.y,
         i.width,
-        "keybinds",
+        "keybinds(快捷鍵)",
         Style::default()
             .fg(p.text)
             .bg(p.panel_bg)
             .add_modifier(Modifier::BOLD),
     );
-    let close = Rect::new(i.right() - 13, i.y, 13, 1);
+    let close = crate::ui::release_notes_close_button_rect(Rect::new(i.x, i.y, i.width, 1));
     button(
         b,
         close,
         if h.search_focused {
-            " esc back "
+            " esc back(返回) "
         } else {
-            " esc close "
+            " esc close(關閉) "
         },
         Style::default()
             .fg(contrast(p))
@@ -1161,7 +1170,7 @@ fn render_help_overlay(
         &if h.search_focused {
             " / ".to_owned()
         } else {
-            " / press / to filter by command or shortcut".to_owned()
+            " / press / to filter by command or shortcut(按 / 依指令或快捷鍵篩選)".to_owned()
         },
         Style::default()
             .fg(if h.search_focused { p.text } else { p.overlay0 })
@@ -1236,9 +1245,9 @@ fn render_help_overlay(
         i.bottom() - 1,
         i.width,
         if h.search_focused {
-            " edit ←→/home/end · kill ^u/^k · yank ^y · scroll ↑↓ · back esc"
+            " edit(編輯) ←→/home/end · kill(刪除) ^u/^k · yank(貼回) ^y · scroll(捲動) ↑↓ · back(返回) esc"
         } else {
-            " search / · scroll j/k/↑↓/pgup/pgdn · close esc/enter"
+            " search(搜尋) / · scroll(捲動) j/k/↑↓/pgup/pgdn · close(關閉) esc/enter"
         },
         Style::default().fg(p.overlay0).bg(p.panel_bg),
     );
@@ -1279,14 +1288,14 @@ fn render_confirm_close_overlay(
         &format!(" {}", c.detail),
         Style::default().fg(p.text).bg(p.panel_bg),
     );
-    let rs = row(i, &[13, 12], 2, 3);
+    let rs = row(i, &[18, 18], 2, 3);
     let [ok, cancel] = rs.as_slice() else {
         return None;
     };
     button(
         b,
         *ok,
-        " ↵ confirm ",
+        " ↵ confirm(確認) ",
         Style::default()
             .fg(contrast(p))
             .bg(p.red)
@@ -1295,7 +1304,7 @@ fn render_confirm_close_overlay(
     button(
         b,
         *cancel,
-        " esc cancel ",
+        " esc cancel(取消) ",
         Style::default()
             .fg(p.text)
             .bg(p.surface0)

@@ -35,16 +35,18 @@ pub(crate) fn keybind_help_text_char(key: &TerminalKey) -> Option<char> {
 }
 
 fn entry(key: impl Into<String>, label: &'static str) -> KeybindHelpEntry {
-    (key.into(), Cow::Borrowed(label))
+    (key.into(), Cow::Borrowed(crate::ui::bilingual(label)))
 }
 
 fn binding_label(bindings: &ActionKeybinds) -> String {
-    bindings.label().unwrap_or_else(|| "unset".to_owned())
+    bindings
+        .label()
+        .unwrap_or_else(|| crate::ui::bilingual("unset").to_owned())
 }
 
 fn indexed_label(bindings: &[IndexedKeybind]) -> String {
     if bindings.is_empty() {
-        return "unset".to_owned();
+        return crate::ui::bilingual("unset").to_owned();
     }
     let mut parts = Vec::new();
     let mut index = 0;
@@ -78,7 +80,7 @@ pub(crate) fn keybind_help_groups(
 ) -> Vec<KeybindHelpGroup> {
     let mut groups = vec![
         (
-            "global",
+            crate::ui::bilingual("global"),
             vec![
                 entry(crate::config::format_prefix_combos(prefixes), "prefix mode"),
                 entry(binding_label(&keybinds.help), "keybinds"),
@@ -92,7 +94,7 @@ pub(crate) fn keybind_help_groups(
             ],
         ),
         (
-            "navigation",
+            crate::ui::bilingual("navigation"),
             vec![
                 entry("esc", "back"),
                 entry(
@@ -119,7 +121,7 @@ pub(crate) fn keybind_help_groups(
             ],
         ),
         (
-            "workspaces / tabs",
+            crate::ui::bilingual("workspaces / tabs"),
             vec![
                 entry(
                     binding_label(&keybinds.workspace_picker),
@@ -161,7 +163,7 @@ pub(crate) fn keybind_help_groups(
             ],
         ),
         (
-            "panes",
+            crate::ui::bilingual("panes"),
             vec![
                 entry(binding_label(&keybinds.split_vertical), "split vertical"),
                 entry(
@@ -208,7 +210,7 @@ pub(crate) fn keybind_help_groups(
 
     if !keybinds.custom_commands.is_empty() {
         groups.push((
-            "custom",
+            crate::ui::bilingual("custom"),
             keybinds
                 .custom_commands
                 .iter()
@@ -219,7 +221,7 @@ pub(crate) fn keybind_help_groups(
                             .description
                             .clone()
                             .map(Cow::Owned)
-                            .unwrap_or(Cow::Borrowed("custom command")),
+                            .unwrap_or(Cow::Borrowed(crate::ui::bilingual("custom command"))),
                     )
                 })
                 .collect(),
@@ -293,12 +295,16 @@ mod tests {
     fn filter_matches_labels_and_shortcuts_case_insensitively() {
         let filtered = filter_keybind_help_groups(groups(), "WoRk");
         assert_eq!(filtered.len(), 1);
-        assert_eq!(filtered[0].1[0].1, "workspace navigation");
+        assert_eq!(filtered[0].1[0].1, "workspace navigation(工作區導覽)");
 
         let filtered = filter_keybind_help_groups(groups(), "x");
         assert_eq!(filtered.len(), 1);
-        assert_eq!(filtered[0].1[0].1, "close pane");
+        assert_eq!(filtered[0].1[0].1, "close pane(關閉窗格)");
         assert!(filter_keybind_help_groups(groups(), "panes").is_empty());
+
+        let filtered = filter_keybind_help_groups(groups(), "新增");
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].1[0].1, "new tab(新增分頁)");
     }
 
     #[test]

@@ -152,11 +152,11 @@ pub fn notification_context(
     ws_idx: usize,
     pane_id: PaneId,
 ) -> String {
-    let mut context = format!("{} · {}", workspace_label, ws_idx + 1);
+    let mut context = format!("workspace(工作區) {}: {}", ws_idx + 1, workspace_label);
     if ws.tabs.len() > 1 {
         if let Some(tab_idx) = ws.find_tab_index_for_pane(pane_id) {
             if let Some(label) = ws.tab_display_name(tab_idx) {
-                context.push_str(&format!(" · {label}"));
+                context.push_str(&format!(" · tab(分頁): {label}"));
             }
         }
     }
@@ -2174,7 +2174,7 @@ mod tests {
 
         assert_eq!(
             notification_context(&state.workspaces[0], "__herdr_projects__", 0, root),
-            "__herdr_projects__ · 1"
+            "workspace(工作區) 1: __herdr_projects__"
         );
     }
 

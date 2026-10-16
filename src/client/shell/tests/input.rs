@@ -807,6 +807,9 @@ fn help_overlay_uses_live_keymap_and_owns_filter_state() {
         .join("\n");
     assert!(text.contains("keybinds"));
     assert!(text.contains("prefix mode"));
+    assert!(text.contains("keybinds("));
+    assert!(text.contains("prefix mode("));
+    assert!(state.hits.overlay_cancel.width >= 17);
 
     assert!(state.handle_input_bytes(b"/").actions.is_empty());
     assert!(state.handle_input_bytes(b"workspace").actions.is_empty());

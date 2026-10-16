@@ -1516,6 +1516,9 @@ pub struct PaneRuntime {
     detect_reset_notify: Arc<Notify>,
     pending_release: Arc<Mutex<Option<PendingAgentRelease>>>,
     preserve_processes_on_drop: bool,
+    /// Set once shutdown has been handed to a background thread that keeps
+    /// the PTY open until protected processes (installers) have exited.
+    io_shutdown_deferred: bool,
     // Task handles for deterministic shutdown
     compression: TerminalCompressionTask,
     detect_handle: Option<tokio::task::AbortHandle>,
@@ -1536,6 +1539,14 @@ impl PaneRuntimeIo {
             PaneRuntimeIo::Actor(actor) => actor.shutdown(),
             #[cfg(test)]
             PaneRuntimeIo::TestChannel { .. } => {}
+        }
+    }
+
+    fn actor_handle(&self) -> Option<PtyIoActorHandle> {
+        match self {
+            PaneRuntimeIo::Actor(actor) => Some(actor.clone()),
+            #[cfg(test)]
+            PaneRuntimeIo::TestChannel { .. } => None,
         }
     }
 
@@ -1707,6 +1718,14 @@ impl Drop for PaneRuntime {
             handle.abort();
         }
         self.compression.abort();
+        if self.io_shutdown_deferred {
+            // A background thread owns the PTY handle and finishes shutdown
+            // once the protected processes are gone.
+            return;
+        }
+        if !self.preserve_processes_on_drop && self.try_defer_shutdown() {
+            return;
+        }
         self.io.shutdown();
         if !self.preserve_processes_on_drop {
             shutdown_pane_processes(
@@ -1714,6 +1733,204 @@ impl Drop for PaneRuntime {
                 self.child_pid.load(Ordering::Acquire),
                 self.child_wait_completed.as_deref(),
             );
+        }
+    }
+}
+
+impl PaneRuntime {
+    /// When the pane session still contains processes that must not be
+    /// interrupted (see `platform::shutdown_hold_pids`), hand the PTY to a
+    /// background thread that keeps the console alive until they exit and
+    /// only then runs the normal shutdown ladder. Returns `true` when the
+    /// shutdown was deferred.
+    fn try_defer_shutdown(&mut self) -> bool {
+        if self.io_shutdown_deferred {
+            return true;
+        }
+        let child_pid = self.child_pid.load(Ordering::Acquire);
+        if child_pid == 0 || self.preserve_processes_on_drop {
+            return false;
+        }
+        let hold_pids = crate::platform::shutdown_hold_pids(child_pid);
+        let actor = self.io.actor_handle();
+        if !should_defer_shutdown(
+            child_pid,
+            &hold_pids,
+            actor.is_some(),
+            self.preserve_processes_on_drop,
+        ) {
+            return false;
+        }
+        let Some(io) = actor else {
+            return false;
+        };
+        if defer_pane_shutdown(
+            self.pane_id,
+            child_pid,
+            hold_pids,
+            io,
+            self.child_wait_completed.clone(),
+        ) {
+            self.io_shutdown_deferred = true;
+            self.preserve_processes_on_drop = true;
+            return true;
+        }
+        false
+    }
+}
+
+/// Pure decision behind [`PaneRuntime::try_defer_shutdown`], kept free of
+/// PTY and process-table access so it can be unit tested.
+fn should_defer_shutdown(
+    child_pid: u32,
+    hold_pids: &[u32],
+    has_actor: bool,
+    preserve_processes: bool,
+) -> bool {
+    child_pid != 0 && !preserve_processes && has_actor && !hold_pids.is_empty()
+}
+
+/// Default upper bound for how long a closed pane keeps its console alive for
+/// protected processes. Override with `HERDR_SHUTDOWN_HOLD_MAX_SECS`.
+const DEFERRED_SHUTDOWN_HOLD_MAX: std::time::Duration = std::time::Duration::from_secs(30 * 60);
+const DEFERRED_SHUTDOWN_HOLD_MAX_ENV: &str = "HERDR_SHUTDOWN_HOLD_MAX_SECS";
+const DEFERRED_SHUTDOWN_POLL: std::time::Duration = std::time::Duration::from_secs(1);
+
+fn parse_deferred_shutdown_hold_max(raw: Option<&str>) -> std::time::Duration {
+    raw.and_then(|value| value.trim().parse::<u64>().ok())
+        .map(std::time::Duration::from_secs)
+        .unwrap_or(DEFERRED_SHUTDOWN_HOLD_MAX)
+}
+
+fn deferred_shutdown_hold_max() -> std::time::Duration {
+    parse_deferred_shutdown_hold_max(
+        std::env::var(DEFERRED_SHUTDOWN_HOLD_MAX_ENV)
+            .ok()
+            .as_deref(),
+    )
+}
+
+/// Threads still holding a pane console open for protected processes. The
+/// server joins them before it exits (see [`wait_for_deferred_pane_shutdowns`])
+/// so process exit does not tear the consoles down anyway.
+static DEFERRED_PANE_SHUTDOWNS: Mutex<Vec<std::thread::JoinHandle<()>>> = Mutex::new(Vec::new());
+
+fn register_deferred_pane_shutdown(handle: std::thread::JoinHandle<()>) {
+    let mut handles = DEFERRED_PANE_SHUTDOWNS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    handles.retain(|existing| !existing.is_finished());
+    handles.push(handle);
+}
+
+/// Blocks until every deferred pane shutdown has finished. Each thread is
+/// already bounded by [`deferred_shutdown_hold_max`], so this cannot hang
+/// longer than that limit. Call it once, right before the server process
+/// exits.
+pub(crate) fn wait_for_deferred_pane_shutdowns() {
+    let handles = std::mem::take(
+        &mut *DEFERRED_PANE_SHUTDOWNS
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()),
+    );
+    let pending = handles
+        .iter()
+        .filter(|handle| !handle.is_finished())
+        .count();
+    if pending > 0 {
+        info!(
+            pending,
+            "waiting for deferred pane shutdowns (protected processes) before exit"
+        );
+    }
+    for handle in handles {
+        let _ = handle.join();
+    }
+}
+
+/// Keeps the PTY (and therefore the pane's console) open until `hold_pids`
+/// have exited, then closes it and terminates whatever is left. Closing the
+/// console earlier would deliver CTRL_CLOSE to an installer mid-write.
+///
+/// The wait is bounded by [`deferred_shutdown_hold_max`]; past that the pane
+/// is shut down anyway. Liveness is judged by PID, so a PID reused within the
+/// hold window can extend the wait but never shortens it below the real
+/// process lifetime observed at the last poll.
+fn defer_pane_shutdown(
+    pane_id: PaneId,
+    child_pid: u32,
+    hold_pids: Vec<u32>,
+    io: PtyIoActorHandle,
+    child_wait_completed: Option<Arc<AtomicBool>>,
+) -> bool {
+    let hold_max = deferred_shutdown_hold_max();
+    info!(
+        pane = pane_id.raw(),
+        pid = child_pid,
+        hold_pids = ?hold_pids,
+        hold_max_secs = hold_max.as_secs(),
+        "pane shutdown deferred: protected processes still running"
+    );
+    let spawned = std::thread::Builder::new()
+        .name(format!("pane-{}-deferred-shutdown", pane_id.raw()))
+        .spawn(move || {
+            let deadline = std::time::Instant::now() + hold_max;
+            let mut timed_out = false;
+            // Re-scan on every poll: installers spawn helpers after the first
+            // snapshot (msiexec -> setup.exe) and PIDs can be reused within the
+            // hold window. The initial list is kept as a fallback for the case
+            // where the pane shell already exited and the installer runs on as
+            // an orphan attached to the same console.
+            let still_protected = || -> Vec<u32> {
+                let mut current = crate::platform::shutdown_hold_pids(child_pid);
+                current.extend(
+                    hold_pids
+                        .iter()
+                        .copied()
+                        .filter(|&pid| crate::platform::process_exists(pid)),
+                );
+                current.sort_unstable();
+                current.dedup();
+                current
+            };
+            let mut remaining = still_protected();
+            while !remaining.is_empty() {
+                if std::time::Instant::now() >= deadline {
+                    timed_out = true;
+                    break;
+                }
+                std::thread::sleep(DEFERRED_SHUTDOWN_POLL);
+                remaining = still_protected();
+            }
+            if timed_out {
+                warn!(
+                    pane = pane_id.raw(),
+                    pid = child_pid,
+                    hold_pids = ?remaining,
+                    "deferred pane shutdown hold limit reached; closing console anyway"
+                );
+            } else {
+                info!(
+                    pane = pane_id.raw(),
+                    pid = child_pid,
+                    "protected processes exited; completing deferred pane shutdown"
+                );
+            }
+            io.shutdown();
+            shutdown_pane_processes(pane_id, child_pid, child_wait_completed.as_deref());
+        });
+    match spawned {
+        Ok(handle) => {
+            register_deferred_pane_shutdown(handle);
+            true
+        }
+        Err(err) => {
+            warn!(
+                pane = pane_id.raw(),
+                err = %err,
+                "could not spawn deferred shutdown thread; shutting down immediately"
+            );
+            false
         }
     }
 }
@@ -2236,6 +2453,9 @@ impl PaneRuntime {
             handle.abort();
         }
         self.compression.abort();
+        if self.try_defer_shutdown() {
+            return;
+        }
         self.io.shutdown();
         shutdown_pane_processes(
             self.pane_id,
@@ -2678,6 +2898,7 @@ impl PaneRuntime {
             pending_release,
             preserve_processes_on_drop: true,
             compression,
+            io_shutdown_deferred: false,
             detect_handle: Some(detect_handle),
         })
     }
@@ -2758,12 +2979,19 @@ impl PaneRuntime {
                     }
                 };
                 child_wait_completed.store(true, Ordering::Release);
-                // Use blocking send — PaneDied is critical, must not be dropped
+                // Use blocking send — PaneDied is critical, must not be dropped.
+                // `send` only fails once the receiver is gone, i.e. the app has
+                // already shut down (deferred pane shutdowns finish after that),
+                // so nobody is left to act on the event.
                 if let Err(e) = rt.block_on(events.send(AppEvent::PaneDied {
                     pane_id,
                     exit_reason,
                 })) {
-                    error!(pane = pane_id.raw(), err = %e, "failed to send PaneDied event");
+                    tracing::debug!(
+                        pane = pane_id.raw(),
+                        err = %e,
+                        "PaneDied event dropped: app event channel already closed"
+                    );
                 }
             });
         }
@@ -3291,6 +3519,7 @@ impl PaneRuntime {
             pending_release,
             preserve_processes_on_drop: false,
             compression,
+            io_shutdown_deferred: false,
             detect_handle,
         })
     }
@@ -4084,6 +4313,7 @@ impl PaneRuntime {
                 pending_release: Arc::new(Mutex::new(None)),
                 preserve_processes_on_drop: true,
                 compression,
+                io_shutdown_deferred: false,
                 detect_handle: Some(tokio::spawn(async {}).abort_handle()),
             },
             rx,
@@ -4566,6 +4796,48 @@ mod tests {
     #[test]
     fn shutdown_liveness_treats_missing_process_as_gone() {
         assert!(!process_alive_for_shutdown(43, 42, false, |_| false));
+    }
+
+    #[test]
+    fn deferred_shutdown_requires_live_child_actor_and_hold_pids() {
+        assert!(should_defer_shutdown(42, &[7], true, false));
+        assert!(!should_defer_shutdown(0, &[7], true, false), "no child");
+        assert!(
+            !should_defer_shutdown(42, &[], true, false),
+            "nothing to hold"
+        );
+        assert!(
+            !should_defer_shutdown(42, &[7], false, false),
+            "no PTY actor"
+        );
+        assert!(
+            !should_defer_shutdown(42, &[7], true, true),
+            "preserved runtimes (handoff) must never be deferred"
+        );
+    }
+
+    #[test]
+    fn deferred_shutdown_hold_max_parses_seconds_and_falls_back() {
+        assert_eq!(
+            parse_deferred_shutdown_hold_max(Some("120")),
+            std::time::Duration::from_secs(120)
+        );
+        assert_eq!(
+            parse_deferred_shutdown_hold_max(Some(" 5 ")),
+            std::time::Duration::from_secs(5)
+        );
+        assert_eq!(
+            parse_deferred_shutdown_hold_max(None),
+            DEFERRED_SHUTDOWN_HOLD_MAX
+        );
+        assert_eq!(
+            parse_deferred_shutdown_hold_max(Some("abc")),
+            DEFERRED_SHUTDOWN_HOLD_MAX
+        );
+        assert_eq!(
+            parse_deferred_shutdown_hold_max(Some("-1")),
+            DEFERRED_SHUTDOWN_HOLD_MAX
+        );
     }
 
     #[cfg(unix)]
@@ -5436,6 +5708,7 @@ mod tests {
             pending_release: Arc::new(Mutex::new(None)),
             preserve_processes_on_drop: true,
             compression,
+            io_shutdown_deferred: false,
             detect_handle: Some(tokio::spawn(async {}).abort_handle()),
         };
 
@@ -5476,6 +5749,7 @@ mod tests {
             pending_release: Arc::new(Mutex::new(None)),
             preserve_processes_on_drop: true,
             compression,
+            io_shutdown_deferred: false,
             detect_handle: Some(tokio::spawn(async {}).abort_handle()),
         };
 

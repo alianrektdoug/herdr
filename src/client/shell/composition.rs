@@ -134,6 +134,8 @@ impl ClientShellState {
             false,
             &self.config.keybinds,
             &self.config.palette,
+            &mut self.mode_bar_scroll,
+            &mut self.hits,
         );
         if let Some(notice) = &self.visible_endpoint_notice {
             self.hits.notification_toast = endpoint_notices::render_notice(
@@ -330,6 +332,8 @@ impl ClientShellState {
                 snapshot.update_available.is_some(),
                 &self.config.keybinds,
                 &self.config.palette,
+                &mut self.mode_bar_scroll,
+                &mut self.hits,
             )
         };
         if mode_bar == Some(layout.tab_bar) {
@@ -689,6 +693,10 @@ impl ClientShellState {
                 self.hits.settings_popup = rendered.settings_popup;
                 self.hits.settings_tabs = rendered.settings_tabs;
                 self.hits.settings_choices = rendered.settings_choices;
+                self.hits.settings_scroll_left = rendered.settings_scroll_left;
+                self.hits.settings_scroll_track = rendered.settings_scroll_track;
+                self.hits.settings_scroll_right = rendered.settings_scroll_right;
+                self.hits.settings_max_horizontal_scroll = rendered.settings_max_horizontal_scroll;
                 self.hits.product_announcement_scrollbar = rendered.product_announcement_scrollbar;
                 self.hits.product_announcement_scroll_metrics =
                     rendered.product_announcement_scroll_metrics;

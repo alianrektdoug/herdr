@@ -7,6 +7,23 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph, Widget},
 };
 
+fn localized_notification_title(event: &SemanticNotification) -> String {
+    match event.kind {
+        SemanticNotificationKind::NeedsAttention => event
+            .title
+            .strip_suffix(" needs attention")
+            .map(|agent| format!("{agent} needs attention(需要處理)"))
+            .unwrap_or_else(|| event.title.clone()),
+        SemanticNotificationKind::Finished => event
+            .title
+            .strip_suffix(" finished")
+            .map(|agent| format!("{agent} finished(已完成)"))
+            .unwrap_or_else(|| event.title.clone()),
+        SemanticNotificationKind::UpdateInstalled => "update ready(更新已就緒)".to_owned(),
+        SemanticNotificationKind::Custom => event.title.clone(),
+    }
+}
+
 pub(super) fn render_mobile_notice_banner(
     buffer: &mut Buffer,
     area: Rect,
@@ -20,11 +37,13 @@ pub(super) fn render_mobile_notice_banner(
         return Rect::default();
     }
     let warning_offset = u16::from(offset_for_warning);
+    let has_body = body.is_some_and(|body| !body.is_empty());
+    let height = u16::from(has_body).saturating_add(1).min(area.height);
     let y = area.y
         + area
             .height
-            .saturating_sub(1u16.saturating_add(warning_offset));
-    let rect = Rect::new(area.x, y, area.width, 1);
+            .saturating_sub(height.saturating_add(warning_offset));
+    let rect = Rect::new(area.x, y, area.width, height);
     let background = palette.surface0;
     Clear.render(rect, buffer);
     buffer.set_style(rect, Style::default().bg(background));
@@ -43,23 +62,25 @@ pub(super) fn render_mobile_notice_banner(
     ] {
         x = super::render::put_segment(buffer, x, rect.y, rect.right(), text, style);
     }
-    if let Some(body) = body.filter(|body| !body.is_empty()) {
-        x = super::render::put_segment(
-            buffer,
-            x,
-            rect.y,
-            rect.right(),
-            " · ",
-            Style::default().fg(palette.overlay0).bg(background),
-        );
-        super::render::put_text(
-            buffer,
-            x,
-            rect.y,
-            rect.right().saturating_sub(x),
-            body,
-            Style::default().fg(palette.overlay0).bg(background),
-        );
+    if rect.height > 1 {
+        if let Some(body) = body.filter(|body| !body.is_empty()) {
+            let body_x = super::render::put_segment(
+                buffer,
+                rect.x,
+                rect.y + 1,
+                rect.right(),
+                "   ",
+                Style::default().fg(palette.overlay0).bg(background),
+            );
+            super::render::put_text(
+                buffer,
+                body_x,
+                rect.y + 1,
+                rect.right().saturating_sub(body_x),
+                body,
+                Style::default().fg(palette.overlay0).bg(background),
+            );
+        }
     }
     rect
 }
@@ -72,20 +93,7 @@ pub(super) fn render_mobile_notification_banner(
     palette: &Palette,
 ) -> Rect {
     let event = &notification.event;
-    let title = match event.kind {
-        SemanticNotificationKind::NeedsAttention => event
-            .title
-            .strip_suffix(" needs attention")
-            .map(|agent| format!("{agent} waiting"))
-            .unwrap_or_else(|| event.title.clone()),
-        SemanticNotificationKind::Finished => event
-            .title
-            .strip_suffix(" finished")
-            .map(|agent| format!("{agent} done"))
-            .unwrap_or_else(|| event.title.clone()),
-        SemanticNotificationKind::UpdateInstalled => "update ready".to_owned(),
-        SemanticNotificationKind::Custom => event.title.clone(),
-    };
+    let title = localized_notification_title(event);
     let dot_color = match event.kind {
         SemanticNotificationKind::NeedsAttention => palette.red,
         SemanticNotificationKind::Finished => palette.blue,
@@ -196,7 +204,7 @@ pub(super) fn render_visible_notification(
     render_notification_card(
         buffer,
         area,
-        &event.title,
+        &localized_notification_title(event),
         event.body.as_deref().unwrap_or_default(),
         event.position.unwrap_or(default_position),
         top_offset,
@@ -233,7 +241,7 @@ mod tests {
         let mut notification = notification();
         notification.event.kind = SemanticNotificationKind::NeedsAttention;
         notification.event.title = "pi needs attention".into();
-        notification.event.body = Some("workspace · tab 1".into());
+        notification.event.body = Some("workspace(工作區) 1: project · tab(分頁): 1".into());
         let area = Rect::new(0, 0, 44, 20);
         let mut buffer = Buffer::empty(area);
         for cell in &mut buffer.content {
@@ -241,15 +249,23 @@ mod tests {
         }
         let rect =
             render_mobile_notification_banner(&mut buffer, area, &notification, true, &palette);
-        assert_eq!(rect, Rect::new(0, 18, 44, 1));
+        assert_eq!(rect, Rect::new(0, 17, 44, 2));
         let text = buffer
             .content
             .iter()
             .map(|cell| cell.symbol())
             .collect::<String>();
-        assert!(text.contains("pi waiting"));
-        assert!(text.contains("workspace · tab 1"));
-        assert!(buffer.content[18 * 44..19 * 44]
+        assert_eq!(
+            localized_notification_title(&notification.event),
+            "pi needs attention(需要處理)"
+        );
+        assert!(text.contains("pi needs attention("));
+        for character in ['需', '要', '處', '理'] {
+            assert!(text.contains(character));
+        }
+        assert!(text.contains("workspace("));
+        assert!(text.contains("tab("));
+        assert!(buffer.content[17 * 44..19 * 44]
             .iter()
             .all(|cell| cell.symbol() != "X"));
     }

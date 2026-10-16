@@ -33,6 +33,12 @@
           "type": "integer",
           "default": "40",
           "description": "Virtual terminal height used for layout and newly created panes when no client is attached. Must be greater than zero."
+        },
+        {
+          "key": "server.stop_on_last_detach",
+          "type": "boolean",
+          "default": "false",
+          "description": "Stop the server when the last attached client detaches or its connection drops (for example when the terminal window is closed), instead of keeping the session alive in the background."
         }
       ]
     },

@@ -220,7 +220,7 @@ pub(crate) fn render_sidebar(
         workspace_area.x,
         workspace_area.y,
         workspace_area.width,
-        " spaces",
+        " spaces(工作區)",
         Style::default()
             .fg(palette.overlay0)
             .add_modifier(Modifier::BOLD),
@@ -380,7 +380,7 @@ pub(crate) fn render_sidebar(
         hits.new_workspace = Rect::new(
             workspace_area.x,
             footer_y,
-            5.min(workspace_area.width),
+            10.min(workspace_area.width),
             u16::from(workspace_area.height > 0),
         );
         put_text(
@@ -388,11 +388,11 @@ pub(crate) fn render_sidebar(
             workspace_area.x,
             footer_y,
             workspace_area.width,
-            " new",
+            " new(新增)",
             Style::default().fg(palette.overlay0),
         );
         let attention = super::super::global_menu::global_menu_attention(snapshot);
-        let launcher_width = if attention { 8 } else { 6 }.min(workspace_area.width);
+        let launcher_width = if attention { 14 } else { 12 }.min(workspace_area.width);
         hits.global_launcher = Rect::new(
             workspace_area.right().saturating_sub(launcher_width),
             footer_y,
@@ -400,7 +400,7 @@ pub(crate) fn render_sidebar(
             1,
         );
         if attention {
-            let start_x = workspace_area.right().saturating_sub(6);
+            let start_x = workspace_area.right().saturating_sub(12);
             put_text(
                 buffer,
                 start_x,
@@ -415,8 +415,8 @@ pub(crate) fn render_sidebar(
                 buffer,
                 start_x.saturating_add(2),
                 footer_y,
-                4,
-                "menu",
+                10,
+                "menu(選單)",
                 Style::default().fg(palette.overlay0),
             );
         } else {
@@ -424,7 +424,7 @@ pub(crate) fn render_sidebar(
                 buffer,
                 workspace_area,
                 footer_y,
-                "menu",
+                "menu(選單)",
                 Style::default().fg(palette.overlay0),
             );
         }

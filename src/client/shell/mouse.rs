@@ -1022,6 +1022,27 @@ impl ClientShellState {
         }
         if mouse.kind == MouseEventKind::Drag(MouseButton::Left) {
             match self.chrome_drag.as_ref() {
+                Some(ClientChromeDrag::ModeBarScrollbar) => {
+                    let track = self.hits.mode_bar_scroll_track;
+                    let position = usize::from(mouse.column.saturating_sub(track.x))
+                        .min(usize::from(track.width.saturating_sub(1)));
+                    self.mode_bar_scroll = position.saturating_mul(self.hits.mode_bar_max_scroll)
+                        / usize::from(track.width.saturating_sub(1).max(1));
+                    outcome.repaint = true;
+                    return;
+                }
+                Some(ClientChromeDrag::SettingsScrollbar) => {
+                    let track = self.hits.settings_scroll_track;
+                    let position = usize::from(mouse.column.saturating_sub(track.x))
+                        .min(usize::from(track.width.saturating_sub(1)));
+                    let max = self.hits.settings_max_horizontal_scroll;
+                    if let Some(ClientShellOverlay::Settings(settings)) = self.overlay.as_mut() {
+                        settings.horizontal_scroll = position.saturating_mul(max)
+                            / usize::from(track.width.saturating_sub(1).max(1));
+                    }
+                    outcome.repaint = true;
+                    return;
+                }
                 Some(ClientChromeDrag::SidebarWidth) => {
                     self.set_sidebar_width_from_column(mouse.column, outcome);
                     return;
@@ -1360,7 +1381,9 @@ impl ClientShellState {
                     ClientChromeDrag::SidebarWidth | ClientChromeDrag::SidebarSection => {
                         self.persist_chrome_preferences(outcome);
                     }
-                    ClientChromeDrag::WorkspaceScrollbar { .. }
+                    ClientChromeDrag::ModeBarScrollbar
+                    | ClientChromeDrag::SettingsScrollbar
+                    | ClientChromeDrag::WorkspaceScrollbar { .. }
                     | ClientChromeDrag::AgentScrollbar { .. }
                     | ClientChromeDrag::HelpScrollbar { .. }
                     | ClientChromeDrag::NavigatorScrollbar { .. }
@@ -1520,7 +1543,54 @@ impl ClientShellState {
             return;
         }
         if matches!(self.overlay, Some(ClientShellOverlay::Settings(_))) {
-            if mouse.kind == MouseEventKind::Down(MouseButton::Left) {
+            let max = self.hits.settings_max_horizontal_scroll;
+            if super::contains(self.hits.settings_scroll_left, point)
+                && mouse.kind == MouseEventKind::Down(MouseButton::Left)
+            {
+                if let Some(ClientShellOverlay::Settings(settings)) = self.overlay.as_mut() {
+                    settings.horizontal_scroll = settings.horizontal_scroll.saturating_sub(4);
+                }
+                outcome.repaint = true;
+            } else if super::contains(self.hits.settings_scroll_right, point)
+                && mouse.kind == MouseEventKind::Down(MouseButton::Left)
+            {
+                if let Some(ClientShellOverlay::Settings(settings)) = self.overlay.as_mut() {
+                    settings.horizontal_scroll =
+                        settings.horizontal_scroll.saturating_add(4).min(max);
+                }
+                outcome.repaint = true;
+            } else if super::contains(self.hits.settings_scroll_track, point)
+                && mouse.kind == MouseEventKind::Down(MouseButton::Left)
+            {
+                self.chrome_drag = Some(ClientChromeDrag::SettingsScrollbar);
+                let track = self.hits.settings_scroll_track;
+                let position = usize::from(mouse.column.saturating_sub(track.x))
+                    .min(usize::from(track.width.saturating_sub(1)));
+                if let Some(ClientShellOverlay::Settings(settings)) = self.overlay.as_mut() {
+                    settings.horizontal_scroll = position.saturating_mul(max)
+                        / usize::from(track.width.saturating_sub(1).max(1));
+                }
+                outcome.repaint = true;
+            } else if matches!(
+                mouse.kind,
+                MouseEventKind::ScrollUp | MouseEventKind::ScrollLeft
+            ) && super::contains(self.hits.settings_popup, point)
+            {
+                if let Some(ClientShellOverlay::Settings(settings)) = self.overlay.as_mut() {
+                    settings.horizontal_scroll = settings.horizontal_scroll.saturating_sub(4);
+                }
+                outcome.repaint = true;
+            } else if matches!(
+                mouse.kind,
+                MouseEventKind::ScrollDown | MouseEventKind::ScrollRight
+            ) && super::contains(self.hits.settings_popup, point)
+            {
+                if let Some(ClientShellOverlay::Settings(settings)) = self.overlay.as_mut() {
+                    settings.horizontal_scroll =
+                        settings.horizontal_scroll.saturating_add(4).min(max);
+                }
+                outcome.repaint = true;
+            } else if mouse.kind == MouseEventKind::Down(MouseButton::Left) {
                 if let Some((_, section)) = self
                     .hits
                     .settings_tabs
@@ -1778,6 +1848,57 @@ impl ClientShellState {
             return;
         }
         if self.scroll_in_progress_selection(mouse, outcome) {
+            return;
+        }
+
+        if super::contains(self.hits.mode_bar, point) && self.hits.mode_bar_max_scroll > 0 {
+            let previous = self.mode_bar_scroll;
+            match mouse.kind {
+                MouseEventKind::ScrollUp | MouseEventKind::ScrollLeft => {
+                    self.mode_bar_scroll = self.mode_bar_scroll.saturating_sub(4);
+                }
+                MouseEventKind::ScrollDown | MouseEventKind::ScrollRight => {
+                    self.mode_bar_scroll = self
+                        .mode_bar_scroll
+                        .saturating_add(4)
+                        .min(self.hits.mode_bar_max_scroll);
+                }
+                MouseEventKind::Down(MouseButton::Left)
+                    if super::contains(self.hits.mode_bar_scroll_left, point) =>
+                {
+                    self.mode_bar_scroll = self.mode_bar_scroll.saturating_sub(4);
+                }
+                MouseEventKind::Down(MouseButton::Left)
+                    if super::contains(self.hits.mode_bar_scroll_right, point) =>
+                {
+                    self.mode_bar_scroll = self
+                        .mode_bar_scroll
+                        .saturating_add(4)
+                        .min(self.hits.mode_bar_max_scroll);
+                }
+                MouseEventKind::Down(MouseButton::Left)
+                    if super::contains(self.hits.mode_bar_scroll_track, point) =>
+                {
+                    self.chrome_drag = Some(ClientChromeDrag::ModeBarScrollbar);
+                    let position = usize::from(
+                        mouse
+                            .column
+                            .saturating_sub(self.hits.mode_bar_scroll_track.x),
+                    );
+                    self.mode_bar_scroll = position.saturating_mul(self.hits.mode_bar_max_scroll)
+                        / usize::from(
+                            self.hits
+                                .mode_bar_scroll_track
+                                .width
+                                .saturating_sub(1)
+                                .max(1),
+                        );
+                }
+                _ => return,
+            }
+            if previous != self.mode_bar_scroll {
+                outcome.repaint = true;
+            }
             return;
         }
 

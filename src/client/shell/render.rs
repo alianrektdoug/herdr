@@ -37,6 +37,8 @@ pub(super) fn render_mode_bar(
     update_available: bool,
     keybinds: &LiveKeybindConfig,
     palette: &Palette,
+    scroll: &mut usize,
+    hits: &mut ShellHitMap,
 ) -> Option<Rect> {
     if (mode == ClientShellMode::Terminal && endpoint_error.is_none()) || pane_area.is_empty() {
         return None;
@@ -72,53 +74,53 @@ pub(super) fn render_mode_bar(
     let prefix_rhs = |bindings: &crate::config::ActionKeybinds| {
         bindings
             .prefix_rhs_label()
-            .unwrap_or_else(|| "unset".to_owned())
+            .unwrap_or_else(|| crate::ui::bilingual("unset").to_owned())
     };
 
     let mut segments = Vec::<(String, Style)>::new();
     if let Some(error) = endpoint_error {
         segments.extend([
-            (" ERROR ".to_owned(), mode_style),
+            (" ERROR(錯誤) ".to_owned(), mode_style),
             (format!(" {error}"), base),
         ]);
     } else {
         match mode {
             ClientShellMode::Prefix => {
                 segments.extend([
-                    (" PREFIX ".to_owned(), mode_style),
+                    (" PREFIX(前置鍵) ".to_owned(), mode_style),
                     (" ".to_owned(), base),
                     ("esc".to_owned(), key),
-                    (" cancel  ".to_owned(), base),
+                    (" cancel(取消)  ".to_owned(), base),
                     (prefix, key),
-                    (" send prefix  ".to_owned(), base),
+                    (" send prefix(傳送前置鍵)  ".to_owned(), base),
                     (prefix_rhs(&keybinds.keybinds.workspace_picker), key),
-                    (" workspace nav  ".to_owned(), base),
+                    (" workspace nav(工作區導覽)  ".to_owned(), base),
                     (prefix_rhs(&keybinds.keybinds.help), key),
-                    (" keybinds".to_owned(), base),
+                    (" keybinds(快捷鍵)".to_owned(), base),
                 ]);
             }
             ClientShellMode::Navigate => {
                 segments.extend([
-                    (" NAVIGATE ".to_owned(), mode_style),
-                    (" esc back  ".to_owned(), base),
+                    (" NAVIGATE(導覽) ".to_owned(), mode_style),
+                    (" esc back(返回)  ".to_owned(), base),
                     ("↑/↓".to_owned(), key),
-                    (" workspace  ".to_owned(), base),
+                    (" workspace(工作區)  ".to_owned(), base),
                     ("tab".to_owned(), key),
-                    (" pane  ".to_owned(), base),
+                    (" pane(窗格)  ".to_owned(), base),
                     (prefix_rhs(&keybinds.keybinds.help), key),
-                    (" keybinds".to_owned(), base),
+                    (" keybinds(快捷鍵)".to_owned(), base),
                 ]);
             }
             ClientShellMode::Resize => {
                 segments.extend([
-                    (" RESIZE ".to_owned(), mode_style),
+                    (" RESIZE(調整大小) ".to_owned(), mode_style),
                     ("  ".to_owned(), base),
                     ("h/l".to_owned(), key),
-                    (" width  ".to_owned(), base),
+                    (" width(寬度)  ".to_owned(), base),
                     ("j/k".to_owned(), key),
-                    (" height  ".to_owned(), base),
+                    (" height(高度)  ".to_owned(), base),
                     ("esc".to_owned(), key),
-                    (" done".to_owned(), base),
+                    (" done(完成)".to_owned(), base),
                 ]);
             }
             ClientShellMode::Copy => {
@@ -128,17 +130,22 @@ pub(super) fn render_mode_bar(
                         crate::api::schema::PaneCopySearchDirection::Forward => "/",
                         crate::api::schema::PaneCopySearchDirection::Backward => "?",
                     };
-                    buffer.set_stringn(bar.x, bar.y, " COPY ", usize::from(bar.width), mode_style);
-                    let prefix = 8.min(bar.width);
-                    if bar.width >= 8 {
-                        buffer.set_string(bar.x + 7, bar.y, marker, key);
+                    let label = " COPY(複製) ";
+                    let label_width = display_width(label);
+                    buffer.set_stringn(
+                        bar.x,
+                        bar.y,
+                        label,
+                        usize::from(bar.width),
+                        mode_style,
+                    );
+                    let prefix = (label_width + 2).min(bar.width);
+                    if bar.width >= label_width + 2 {
+                        buffer.set_string(bar.x + label_width + 1, bar.y, marker, key);
                     }
-                    let footer = "  enter search  esc cancel";
-                    let footer_width = if bar.width >= 50 {
-                        footer.len() as u16
-                    } else {
-                        0
-                    };
+                    let footer = "  enter search(搜尋)  esc cancel(取消)";
+                    // 上游用 footer.len()，對非 ASCII 文字會算錯寬度。
+                    let footer_width = if bar.width >= 50 { display_width(footer) } else { 0 };
                     let field = Rect::new(
                         bar.x + prefix,
                         bar.y,
@@ -160,9 +167,9 @@ pub(super) fn render_mode_bar(
                     return Some(bar);
                 } else {
                     let select = if copy_mode.selection.is_some() {
-                        "selecting"
+                        "selecting(選取中)"
                     } else {
-                        "select"
+                        "select(選取)"
                     };
                     let match_status = copy_mode
                         .search_current_global
@@ -171,23 +178,23 @@ pub(super) fn render_mode_bar(
                         .unwrap_or_default();
                     let (exit_keys, exit_label) =
                         if copy_mode.search_query.is_empty() && copy_mode.selection.is_none() {
-                            ("q/esc", " exit")
+                            ("q/esc", " exit(離開)")
                         } else {
-                            ("esc", " clear  q exit")
+                            ("esc", " clear(清除)  q exit(離開)")
                         };
                     segments.extend([
-                        (" COPY ".to_owned(), mode_style),
+                        (" COPY(複製) ".to_owned(), mode_style),
                         (" ".to_owned(), base),
                         ("h/j/k/l w/b/e { }".to_owned(), key),
-                        (" move  ".to_owned(), base),
+                        (" move(移動)  ".to_owned(), base),
                         ("/ ?".to_owned(), key),
-                        (" search  ".to_owned(), base),
+                        (" search(搜尋)  ".to_owned(), base),
                         ("n/N".to_owned(), key),
-                        (format!(" repeat{match_status}  "), base),
+                        (format!(" repeat(重複){match_status}  "), base),
                         ("v/space".to_owned(), key),
                         (format!(" {select}  "), base),
                         ("y/enter".to_owned(), key),
-                        (" copy  ".to_owned(), base),
+                        (" copy(複製)  ".to_owned(), base),
                         (exit_keys.to_owned(), key),
                         (exit_label.to_owned(), base),
                     ]);
@@ -197,34 +204,66 @@ pub(super) fn render_mode_bar(
         }
     }
 
-    let mut x = bar.x;
-    let end = bar.x + bar.width;
-    for (text, style) in segments {
-        if x >= end {
-            break;
-        }
-        let remaining = end - x;
-        buffer.set_stringn(x, bar.y, &text, usize::from(remaining), style);
-        x = x.saturating_add(
-            u16::try_from(UnicodeWidthStr::width(text.as_str()))
-                .unwrap_or(u16::MAX)
-                .min(remaining),
-        );
-    }
     if update_available && mode == ClientShellMode::Navigate {
-        let width = 13.min(bar.width);
-        let area = Rect::new(bar.right().saturating_sub(width), bar.y, width, 1);
-        buffer.set_style(area, Style::default().bg(palette.panel_bg));
-        put_right_text(
-            buffer,
-            area,
-            area.y,
-            " update ready",
+        segments.push((
+            "  update ready(更新已就緒)".to_owned(),
             Style::default()
                 .fg(palette.accent)
                 .bg(palette.panel_bg)
                 .add_modifier(Modifier::BOLD),
+        ));
+    }
+
+    let total_width = segments
+        .iter()
+        .map(|(text, _)| UnicodeWidthStr::width(text.as_str()))
+        .sum::<usize>();
+    let control_width = if total_width > usize::from(bar.width) && bar.width >= 10 {
+        9
+    } else {
+        0
+    };
+    let content = Rect::new(bar.x, bar.y, bar.width.saturating_sub(control_width), 1);
+    let max_scroll = total_width.saturating_sub(usize::from(content.width));
+    *scroll = (*scroll).min(max_scroll);
+    hits.mode_bar = bar;
+    hits.mode_bar_max_scroll = max_scroll;
+
+    let line = ratatui::text::Line::from(
+        segments
+            .into_iter()
+            .map(|(text, style)| ratatui::text::Span::styled(text, style))
+            .collect::<Vec<_>>(),
+    );
+    ratatui::widgets::Widget::render(
+        ratatui::widgets::Paragraph::new(line)
+            .scroll((0, u16::try_from(*scroll).unwrap_or(u16::MAX))),
+        content,
+        buffer,
+    );
+
+    if control_width > 0 {
+        let controls = Rect::new(content.right(), bar.y, control_width, 1);
+        buffer.set_style(controls, base);
+        hits.mode_bar_scroll_left = Rect::new(controls.x, controls.y, 2, 1);
+        hits.mode_bar_scroll_track = Rect::new(controls.x + 2, controls.y, 5, 1);
+        hits.mode_bar_scroll_right = Rect::new(controls.right() - 2, controls.y, 2, 1);
+        put_text(buffer, controls.x, controls.y, 2, "◀ ", key);
+        put_text(buffer, controls.x + 2, controls.y, 5, "─────", base);
+        let thumb = if max_scroll == 0 {
+            0
+        } else {
+            scroll.saturating_mul(4) / max_scroll
+        };
+        put_text(
+            buffer,
+            controls.x + 2 + u16::try_from(thumb).unwrap_or(4).min(4),
+            controls.y,
+            1,
+            "●",
+            key,
         );
+        put_text(buffer, controls.right() - 2, controls.y, 2, " ▶", key);
     }
     Some(bar)
 }

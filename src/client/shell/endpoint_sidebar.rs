@@ -545,7 +545,11 @@ pub(super) fn render_expanded(
             buffer,
             workspace_area,
             footer_y,
-            if attention { "● menu" } else { "menu" },
+            if attention {
+                "● menu(選單)"
+            } else {
+                "menu(選單)"
+            },
             Style::default().fg(if attention {
                 palette.accent
             } else {

@@ -725,6 +725,12 @@ fn agent_sidebar_honors_priority_symbols_tokens_and_stable_hits() {
     assert!(text.contains("× needs input"), "frame: {text}");
     assert!(text.contains("pi two"), "frame: {text}");
     assert!(text.contains("waiting for"), "frame: {text}");
+    assert!(text.contains("agents("), "frame: {text}");
+    assert!(text.contains("priority("), "frame: {text}");
+    assert_eq!(
+        state.hits.agent_sort_toggle.y.saturating_add(1),
+        state.hits.agent_body.y
+    );
     assert_eq!(
         state
             .hits
@@ -1257,12 +1263,15 @@ fn worktree_create_previews_the_endpoint_owned_checkout_path() {
         .handle_input_bytes(b"feature/client-shell")
         .actions
         .is_empty());
-    assert!(matches!(
-        &state.overlay,
-        Some(ClientShellOverlay::WorktreeCreate(create))
-            if create.checkout_path
-                == "/tmp/herdr-worktrees/repo/feature-client-shell"
-    ));
+    let Some(ClientShellOverlay::WorktreeCreate(create)) = &state.overlay else {
+        panic!("worktree create overlay should remain open after typing");
+    };
+    assert_eq!(
+        std::path::Path::new(&create.checkout_path),
+        std::path::Path::new("/tmp/herdr-worktrees")
+            .join("repo")
+            .join("feature-client-shell")
+    );
     let submit = state.handle_input_bytes(b"\r");
     let [ClientShellAction::Endpoint { request, .. }] = &submit.actions[..] else {
         panic!("worktree create should use endpoint API");
@@ -1587,7 +1596,10 @@ fn semantic_notifications_use_client_policy_and_stable_navigation_targets() {
         })
         .collect::<Vec<_>>()
         .join("\n");
-    assert!(rendered.contains("codex needs attention"));
+    assert!(rendered.contains("codex needs attention("));
+    for character in ['需', '要', '處', '理'] {
+        assert!(rendered.contains(character));
+    }
     let hit = state.hits.notification_toast;
     let click = || {
         RawInputEvent::Mouse(crossterm::event::MouseEvent {

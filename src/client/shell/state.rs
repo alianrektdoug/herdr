@@ -100,6 +100,11 @@ pub(super) struct ShellHitMap {
     pub(super) agent_scroll_metrics: Option<crate::pane::ScrollMetrics>,
     pub(super) agent_max_scroll: usize,
     pub(super) agent_sort_toggle: Rect,
+    pub(super) mode_bar: Rect,
+    pub(super) mode_bar_scroll_left: Rect,
+    pub(super) mode_bar_scroll_track: Rect,
+    pub(super) mode_bar_scroll_right: Rect,
+    pub(super) mode_bar_max_scroll: usize,
     pub(super) sidebar_divider: Rect,
     pub(super) sidebar_section_divider: Rect,
     pub(super) sidebar_toggle: Rect,
@@ -132,6 +137,10 @@ pub(super) struct ShellHitMap {
     pub(super) settings_popup: Rect,
     pub(super) settings_tabs: Vec<(Rect, ClientSettingsSection)>,
     pub(super) settings_choices: Vec<(Rect, usize)>,
+    pub(super) settings_scroll_left: Rect,
+    pub(super) settings_scroll_track: Rect,
+    pub(super) settings_scroll_right: Rect,
+    pub(super) settings_max_horizontal_scroll: usize,
     pub(super) product_announcement_scrollbar: Rect,
     pub(super) product_announcement_scroll_metrics: Option<crate::pane::ScrollMetrics>,
     pub(super) product_announcement_max_scroll: usize,
@@ -187,6 +196,8 @@ pub(super) struct ClientTabPress {
 }
 
 pub(super) enum ClientChromeDrag {
+    ModeBarScrollbar,
+    SettingsScrollbar,
     SidebarWidth,
     SidebarSection,
     WorkspaceScrollbar {
@@ -400,13 +411,13 @@ impl ClientSettingsSection {
     ];
 
     pub(super) fn label(self) -> &'static str {
-        match self {
+        crate::ui::bilingual(match self {
             Self::Theme => "theme",
             Self::Indicators => "indicators",
             Self::Sound => "sound",
             Self::Toast => "toasts",
             Self::Integrations => "integrations",
-        }
+        })
     }
 }
 
@@ -420,6 +431,7 @@ pub(super) struct ClientSettingsOverlay {
     pub(super) integration_messages: Vec<String>,
     pub(super) loading_integrations: bool,
     pub(super) installing_integrations: bool,
+    pub(super) horizontal_scroll: usize,
 }
 
 #[derive(Debug)]
@@ -444,7 +456,7 @@ pub(super) struct ClientWorktreeOpenEntry {
 
 impl ClientWorktreeOpenEntry {
     pub(super) fn status_label(&self) -> &'static str {
-        if self.open_workspace_id.is_some() {
+        crate::ui::bilingual(if self.open_workspace_id.is_some() {
             "open"
         } else if self.branch.is_some() {
             ""
@@ -452,7 +464,7 @@ impl ClientWorktreeOpenEntry {
             "detached"
         } else {
             "root"
-        }
+        })
     }
 
     pub(super) fn matches_query(&self, query: &str) -> bool {
@@ -888,6 +900,7 @@ pub(crate) struct ClientShellState {
     pub(super) tab_scroll: usize,
     pub(super) mobile_switcher_scroll: usize,
     pub(super) reveal_focused_workspace: bool,
+    pub(super) mode_bar_scroll: usize,
     pub(super) reveal_mobile_workspace: bool,
     pub(super) mobile_switcher_suspended: bool,
     pub(super) reveal_focused_tab: bool,
@@ -1062,6 +1075,7 @@ impl ClientShellState {
             tab_scroll: 0,
             mobile_switcher_scroll: 0,
             reveal_focused_workspace: true,
+            mode_bar_scroll: 0,
             reveal_mobile_workspace: false,
             mobile_switcher_suspended: false,
             reveal_focused_tab: true,

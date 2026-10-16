@@ -238,6 +238,8 @@ pub fn process_start_token(_pid: u32) -> Option<u64> {
 /// Unsupported platform stub.
 pub fn live_pane_process_group(_shell_pid: u32, _pid: u32, _start_token: u64) -> Option<u32> {
     None
+pub fn shutdown_hold_pids(_child_pid: u32) -> Vec<u32> {
+    Vec::new()
 }
 
 /// Unsupported platform stub.

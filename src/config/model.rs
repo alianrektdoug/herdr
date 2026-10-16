@@ -1046,6 +1046,10 @@ pub struct ServerConfig {
     pub headless_cols: u16,
     /// Virtual terminal height used when no client is attached. Default: 40.
     pub headless_rows: u16,
+    /// Stop the server when the last attached client detaches or its
+    /// connection drops (for example when the terminal window is closed),
+    /// instead of keeping the session alive in the background. Default: false.
+    pub stop_on_last_detach: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1318,6 +1322,7 @@ impl Default for ServerConfig {
             allow_unelevated_clients: false,
             headless_cols: crate::config::DEFAULT_HEADLESS_COLS,
             headless_rows: crate::config::DEFAULT_HEADLESS_ROWS,
+            stop_on_last_detach: false,
         }
     }
 }
@@ -1982,6 +1987,17 @@ delay_seconds = {}
     #[test]
     fn server_headless_size_defaults_and_parses() {
         let default_config = Config::default();
+        assert!(
+            !default_config.server.stop_on_last_detach,
+            "server keeps running after the last detach unless opted in"
+        );
+        let opted_in: Config = toml::from_str(
+            r#"[server]
+stop_on_last_detach = true
+"#,
+        )
+        .unwrap();
+        assert!(opted_in.server.stop_on_last_detach);
         assert_eq!(
             default_config.server.headless_cols,
             crate::config::DEFAULT_HEADLESS_COLS

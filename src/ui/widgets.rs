@@ -89,13 +89,13 @@ pub(crate) fn modal_stack_areas(
 
 fn action_button_width(hint: Option<&str>, label: &str) -> u16 {
     match hint {
-        Some(hint) => format!(" {hint} {label} ").chars().count() as u16,
-        None => format!(" {label} ").chars().count() as u16,
+        Some(hint) => super::text::display_width(&format!(" {hint} {label} ")) as u16,
+        None => super::text::display_width(&format!(" {label} ")) as u16,
     }
 }
 
 pub(crate) fn close_button_rect(area: Rect) -> Rect {
-    let width = action_button_width(Some("esc"), "close");
+    let width = action_button_width(Some("esc"), super::bilingual::bilingual("close"));
     Rect::new(area.x + area.width.saturating_sub(width), area.y, width, 1)
 }
 
@@ -103,7 +103,7 @@ pub(crate) fn continue_button_rect(area: Rect) -> Rect {
     Rect::new(
         area.x,
         area.y,
-        action_button_width(Some("↵"), "continue"),
+        action_button_width(Some("↵"), super::bilingual::bilingual("continue")),
         1,
     )
 }

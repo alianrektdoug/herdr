@@ -1032,12 +1032,32 @@ impl HeadlessServer {
             };
             self.shell_geometry_controller_for_terminal(terminal_id)
         });
+        let had_app_client = self.has_app_client();
         self.remove_client(client_id);
         if let Some((controller_id, target)) = restore_shell_controller {
             self.restore_shell_tab_geometry(controller_id, target);
         } else {
             self.resize_tabs_for_only_shell_client(true);
         }
+        if had_app_client && !self.has_app_client() {
+            self.stop_if_last_client_left();
+        }
+    }
+
+    /// `server.stop_on_last_detach = true` turns the persistent session into a
+    /// window-scoped one: once the last attached client is gone the server
+    /// shuts itself down (panes go through the normal shutdown ladder).
+    fn stop_if_last_client_left(&mut self) {
+        if !self.app.state.stop_server_on_last_detach
+            || self.shutting_down
+            || self.handoff_in_progress
+        {
+            return;
+        }
+        info!("last client detached; stopping server (server.stop_on_last_detach)");
+        // Hand off to the main loop's quit check so pending events are drained
+        // and `initiate_shutdown` runs from its single existing call site.
+        self.app.state.should_quit = true;
     }
 
     /// Accepts pending client connections from the non-blocking listener.

@@ -42,6 +42,7 @@ impl ClientShellState {
             integration_messages: Vec::new(),
             loading_integrations: false,
             installing_integrations: false,
+            horizontal_scroll: 0,
         }));
     }
 
@@ -73,6 +74,7 @@ impl ClientShellState {
         if let Some(ClientShellOverlay::Settings(settings)) = self.overlay.as_mut() {
             settings.section = section;
             settings.selected = selected;
+            settings.horizontal_scroll = 0;
         }
         if request_integrations {
             self.queue_integration_list(outcome, true);

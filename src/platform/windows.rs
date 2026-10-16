@@ -457,7 +457,7 @@ use windows_sys::{
     Win32::{
         Foundation::{
             CloseHandle, GlobalFree, LocalFree, FILETIME, HANDLE, HWND, INVALID_HANDLE_VALUE,
-            MAX_PATH, NTSTATUS, STATUS_BUFFER_OVERFLOW, STATUS_BUFFER_TOO_SMALL,
+            LPARAM, MAX_PATH, NTSTATUS, STATUS_BUFFER_OVERFLOW, STATUS_BUFFER_TOO_SMALL,
             STATUS_INFO_LENGTH_MISMATCH, STATUS_SUCCESS, UNICODE_STRING,
         },
         Globalization::{CompareStringOrdinal, CSTR_EQUAL, CSTR_GREATER_THAN, CSTR_LESS_THAN},
@@ -494,7 +494,8 @@ use windows_sys::{
                 OpenProcess, OpenThread, QueryFullProcessImageNameW, ResumeThread,
                 TerminateProcess, CREATE_NO_WINDOW, CREATE_SUSPENDED, DETACHED_PROCESS,
                 PROCESS_BASIC_INFORMATION, PROCESS_QUERY_INFORMATION,
-                PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_VM_READ, THREAD_SUSPEND_RESUME,
+                PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE, PROCESS_VM_READ,
+                THREAD_SUSPEND_RESUME,
             },
         },
         UI::{
@@ -507,8 +508,8 @@ use windows_sys::{
             },
             Shell::{CommandLineToArgvW, ShellExecuteW},
             WindowsAndMessaging::{
-                GetForegroundWindow, GetWindowThreadProcessId, SendMessageTimeoutW,
-                SMTO_ABORTIFHUNG, WM_IME_CONTROL,
+                EnumWindows, GetForegroundWindow, GetWindowThreadProcessId, PostMessageW,
+                SendMessageTimeoutW, SMTO_ABORTIFHUNG, WM_CLOSE, WM_IME_CONTROL,
             },
         },
     },
@@ -2640,19 +2641,189 @@ fn session_processes_from_snapshot(child_pid: u32, snapshot: &ProcessSnapshot) -
     pids
 }
 
+/// Executable names (lower-case, with `.exe`) that pane shutdown must never
+/// force-terminate. Killing an installer or a servicing tool while it is
+/// replacing files can leave the machine with half-installed software; the
+/// process is left running and reported instead.
+const PROTECTED_SHUTDOWN_PROCESS_NAMES: &[&str] = &[
+    "msiexec.exe",
+    "winget.exe",
+    "wusa.exe",
+    "dism.exe",
+    "trustedinstaller.exe",
+    "tiworker.exe",
+    "pkgmgr.exe",
+];
+
+/// Installer / uninstaller executables are matched by suffix so that
+/// `node-v24-setup.exe` or `UnifiedInstaller.exe` are protected while names
+/// that merely contain the word (`my-setup-notes.exe`, `installer-cli.exe`)
+/// are not. Inno Setup uninstallers (`unins000.exe`) are handled separately.
+const PROTECTED_SHUTDOWN_NAME_SUFFIXES: &[&str] = &[
+    "setup.exe",
+    "install.exe",
+    "installer.exe",
+    "uninstall.exe",
+    "uninstaller.exe",
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ShutdownAction {
+    Skip,
+    CloseWindows,
+    Terminate,
+}
+
+/// Lower-cased file name with the directory stripped. Unlike
+/// `platform::normalized_process_name` this keeps the `.exe` suffix because
+/// the protected lists above are written as complete file names.
+fn normalized_shutdown_process_name(name: &str) -> String {
+    name.rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(name)
+        .trim()
+        .to_ascii_lowercase()
+}
+
+fn is_inno_setup_uninstaller_name(normalized: &str) -> bool {
+    normalized
+        .strip_prefix("unins")
+        .and_then(|rest| rest.strip_suffix(".exe"))
+        .is_some_and(|digits| !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()))
+}
+
+fn is_protected_shutdown_process_name(name: &str) -> bool {
+    let normalized = normalized_shutdown_process_name(name);
+    if normalized.is_empty() {
+        return false;
+    }
+    PROTECTED_SHUTDOWN_PROCESS_NAMES.contains(&normalized.as_str())
+        || PROTECTED_SHUTDOWN_NAME_SUFFIXES
+            .iter()
+            .any(|suffix| normalized.ends_with(suffix))
+        || is_inno_setup_uninstaller_name(&normalized)
+}
+
+/// Maps the cross-platform shutdown signal ladder onto Windows actions.
+/// Unix delivers SIGHUP / SIGTERM / SIGKILL; Windows has no catchable
+/// process signal, so `Terminate` asks top-level windows to close and only
+/// `Kill` calls `TerminateProcess`. Protected processes are never touched.
+fn plan_shutdown_action(signal: Signal, process_name: &str) -> ShutdownAction {
+    if is_protected_shutdown_process_name(process_name) {
+        return ShutdownAction::Skip;
+    }
+    match signal {
+        Signal::Hangup => ShutdownAction::Skip,
+        Signal::Terminate => ShutdownAction::CloseWindows,
+        Signal::Kill => ShutdownAction::Terminate,
+    }
+}
+
+unsafe extern "system" fn post_close_to_window_of_pid(
+    hwnd: HWND,
+    lparam: LPARAM,
+) -> windows_sys::core::BOOL {
+    let target_pid = lparam as usize as u32;
+    let mut window_pid = 0u32;
+    unsafe {
+        GetWindowThreadProcessId(hwnd, &mut window_pid);
+    }
+    if window_pid == target_pid {
+        unsafe {
+            PostMessageW(hwnd, WM_CLOSE, 0, 0);
+        }
+    }
+    1
+}
+
+fn close_process_windows(pid: u32) {
+    unsafe {
+        EnumWindows(Some(post_close_to_window_of_pid), pid as usize as LPARAM);
+    }
+}
+
+fn terminate_process(pid: u32, name: &str) {
+    let Some(process) = ProcessHandle::open(pid, PROCESS_TERMINATE) else {
+        tracing::warn!(
+            pid,
+            name,
+            error = %std::io::Error::last_os_error(),
+            "pane shutdown could not open process for termination"
+        );
+        return;
+    };
+    let terminated = unsafe { TerminateProcess(process.0, 1) };
+    if terminated == 0 {
+        tracing::warn!(
+            pid,
+            name,
+            error = %std::io::Error::last_os_error(),
+            "pane shutdown TerminateProcess failed"
+        );
+    }
+}
+
 pub fn signal_processes(pids: &[u32], signal: Signal) {
-    if signal == Signal::Hangup {
+    if signal == Signal::Hangup || pids.is_empty() {
         return;
     }
 
-    for &pid in pids {
-        let Some(process) = ProcessHandle::open(pid, PROCESS_QUERY_LIMITED_INFORMATION) else {
-            continue;
-        };
-        unsafe {
-            TerminateProcess(process.0, 1);
+    let snapshot = ProcessSnapshot::new(snapshot_processes());
+    let targets = pids
+        .iter()
+        .map(|&pid| {
+            (
+                pid,
+                snapshot
+                    .entry(pid)
+                    .map(|entry| entry.name.as_str())
+                    .unwrap_or(""),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    if signal == Signal::Terminate {
+        tracing::info!(?targets, "pane shutdown signaling process tree");
+    }
+
+    for &(pid, name) in &targets {
+        match plan_shutdown_action(signal, name) {
+            ShutdownAction::Skip => {
+                if signal == Signal::Kill && is_protected_shutdown_process_name(name) {
+                    tracing::warn!(
+                        pid,
+                        name,
+                        "protected process left running through pane shutdown"
+                    );
+                }
+            }
+            ShutdownAction::CloseWindows => close_process_windows(pid),
+            ShutdownAction::Terminate => terminate_process(pid, name),
         }
     }
+}
+
+/// Processes in the pane session that must outlive pane shutdown. Closing
+/// the pane's console delivers CTRL_CLOSE to every attached process, so an
+/// installer found here keeps the PTY alive until it exits (see
+/// `PROTECTED_SHUTDOWN_PROCESS_NAMES`).
+pub fn shutdown_hold_pids(child_pid: u32) -> Vec<u32> {
+    if child_pid == 0 {
+        return Vec::new();
+    }
+    let snapshot = ProcessSnapshot::new(snapshot_processes());
+    shutdown_hold_pids_from_snapshot(child_pid, &snapshot)
+}
+
+fn shutdown_hold_pids_from_snapshot(child_pid: u32, snapshot: &ProcessSnapshot) -> Vec<u32> {
+    session_processes_from_snapshot(child_pid, snapshot)
+        .into_iter()
+        .filter(|&pid| {
+            snapshot
+                .entry(pid)
+                .is_some_and(|entry| is_protected_shutdown_process_name(&entry.name))
+        })
+        .collect()
 }
 
 pub fn process_exists(pid: u32) -> bool {
@@ -5454,5 +5625,142 @@ mod tests {
                 "second event is key-up"
             );
         }
+    }
+
+    #[test]
+    fn windows_protected_shutdown_names_match_installers() {
+        for name in [
+            "msiexec.exe",
+            "MsiExec.exe",
+            r"C:\Windows\System32\msiexec.exe",
+            "winget.exe",
+            "wusa.exe",
+            "dism.exe",
+            "TrustedInstaller.exe",
+            "setup.exe",
+            "node-v24.19.0-x64-setup.exe",
+            "UnifiedInstaller.exe",
+            "unins000.exe",
+        ] {
+            assert!(
+                super::is_protected_shutdown_process_name(name),
+                "{name} should be protected"
+            );
+        }
+    }
+
+    #[test]
+    fn windows_protected_shutdown_names_ignore_ordinary_processes() {
+        for name in [
+            "node.exe",
+            "powershell.exe",
+            "pwsh.exe",
+            "cmd.exe",
+            "claude.exe",
+            "codex.exe",
+            "bash.exe",
+            "",
+            "   ",
+        ] {
+            assert!(
+                !super::is_protected_shutdown_process_name(name),
+                "{name} should not be protected"
+            );
+        }
+    }
+
+    #[test]
+    fn windows_protected_shutdown_names_need_installer_suffix_not_substring() {
+        for name in [
+            "my-setup-notes.exe",
+            "installer-cli.exe",
+            "setup-tool.exe",
+            "uninsabc.exe",
+            "unins.exe",
+            "node-setup-helper.exe",
+            "setup.txt",
+        ] {
+            assert!(
+                !super::is_protected_shutdown_process_name(name),
+                "{name} should not be protected"
+            );
+        }
+        for name in [
+            "unins000.exe",
+            "unins1.exe",
+            "Uninstall.exe",
+            "Foo_Installer.exe",
+        ] {
+            assert!(
+                super::is_protected_shutdown_process_name(name),
+                "{name} should be protected"
+            );
+        }
+    }
+
+    #[test]
+    fn windows_shutdown_plan_never_terminates_protected_processes() {
+        for signal in [
+            super::Signal::Hangup,
+            super::Signal::Terminate,
+            super::Signal::Kill,
+        ] {
+            assert_eq!(
+                super::plan_shutdown_action(signal, "msiexec.exe"),
+                super::ShutdownAction::Skip,
+                "{signal:?} must skip msiexec"
+            );
+        }
+    }
+
+    #[test]
+    fn windows_shutdown_plan_escalates_for_ordinary_processes() {
+        assert_eq!(
+            super::plan_shutdown_action(super::Signal::Hangup, "node.exe"),
+            super::ShutdownAction::Skip
+        );
+        assert_eq!(
+            super::plan_shutdown_action(super::Signal::Terminate, "node.exe"),
+            super::ShutdownAction::CloseWindows
+        );
+        assert_eq!(
+            super::plan_shutdown_action(super::Signal::Kill, "node.exe"),
+            super::ShutdownAction::Terminate
+        );
+        assert_eq!(
+            super::plan_shutdown_action(super::Signal::Kill, ""),
+            super::ShutdownAction::Terminate,
+            "unknown names are treated as ordinary processes"
+        );
+    }
+
+    #[test]
+    fn windows_shutdown_hold_pids_keep_only_protected_session_processes() {
+        let snapshot = super::ProcessSnapshot::new(vec![
+            test_entry(10, 1, "powershell.exe", &["powershell.exe"]),
+            test_entry(20, 10, "node.exe", &["node.exe"]),
+            test_entry(30, 20, "msiexec.exe", &["msiexec.exe"]),
+            test_entry(40, 10, "node-setup.exe", &["node-setup.exe"]),
+            test_entry(50, 2, "msiexec.exe", &["msiexec.exe"]),
+        ]);
+        let mut hold = super::shutdown_hold_pids_from_snapshot(10, &snapshot);
+        hold.sort_unstable();
+        assert_eq!(
+            hold,
+            vec![30, 40],
+            "only protected descendants of the pane shell"
+        );
+        assert_eq!(
+            super::shutdown_hold_pids_from_snapshot(20, &snapshot),
+            vec![30]
+        );
+        assert_eq!(
+            super::shutdown_hold_pids_from_snapshot(0, &snapshot),
+            Vec::<u32>::new()
+        );
+        assert_eq!(
+            super::shutdown_hold_pids_from_snapshot(999, &snapshot),
+            Vec::<u32>::new()
+        );
     }
 }

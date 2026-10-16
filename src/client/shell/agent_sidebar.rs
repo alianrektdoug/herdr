@@ -75,7 +75,7 @@ pub(super) fn render_agent_panel(
         snapshot
             .agent_view_label
             .as_ref()
-            .map(|_| " no matching agents"),
+            .map(|_| " no matching agents(找不到符合的代理程式)"),
         config,
         agent_scroll,
         hits,
@@ -113,19 +113,21 @@ pub(super) fn render_agent_panel_header(
         area.x,
         area.y + 1,
         area.width,
-        " agents",
+        " agents(代理程式)",
         Style::default()
             .fg(config.palette.overlay0)
             .add_modifier(Modifier::BOLD),
     );
-    let sort_label = agent_view_label.unwrap_or(match config.agent_panel_sort {
-        crate::config::AgentPanelSortConfig::Spaces => "grouped",
-        crate::config::AgentPanelSortConfig::Priority => "priority",
-    });
+    let sort_label = crate::ui::bilingual(agent_view_label.unwrap_or(
+        match config.agent_panel_sort {
+            crate::config::AgentPanelSortConfig::Spaces => "grouped",
+            crate::config::AgentPanelSortConfig::Priority => "priority",
+        },
+    ));
     let sort_width = display_width(sort_label).min(area.width as usize) as u16;
     let sort_rect = Rect::new(
         area.right().saturating_sub(sort_width),
-        area.y + 1,
+        area.y + 2,
         sort_width,
         1,
     );
@@ -374,10 +376,8 @@ pub(super) fn render_agent_row(
 }
 
 fn put_text(buffer: &mut Buffer, x: u16, y: u16, width: u16, text: &str, style: Style) {
-    for (offset, character) in text.chars().take(width as usize).enumerate() {
-        if let Some(cell) = buffer.cell_mut((x + offset as u16, y)) {
-            cell.set_char(character).set_style(style);
-        }
+    if width > 0 {
+        buffer.set_stringn(x, y, text, usize::from(width), style);
     }
 }
 
@@ -388,9 +388,9 @@ fn display_width(text: &str) -> usize {
 fn sidebar_status_text(status: crate::api::schema::AgentStatus) -> &'static str {
     use crate::api::schema::AgentStatus;
     match status {
-        AgentStatus::Blocked => "blocked",
-        AgentStatus::Done => "done",
-        AgentStatus::Working => "working",
-        AgentStatus::Idle | AgentStatus::Unknown => "idle",
+        AgentStatus::Blocked => crate::ui::bilingual("blocked"),
+        AgentStatus::Done => crate::ui::bilingual("done"),
+        AgentStatus::Working => crate::ui::bilingual("working"),
+        AgentStatus::Idle | AgentStatus::Unknown => crate::ui::bilingual("idle"),
     }
 }

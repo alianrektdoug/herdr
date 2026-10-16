@@ -1896,19 +1896,19 @@ pub(crate) fn update_install_command() -> &'static str {
 pub(crate) fn update_install_instruction(install_command: &str) -> String {
     match install_command {
         HERDR_UPDATE_COMMAND => {
-            "detach, run `herdr update`, then run Herdr again to reconnect".to_string()
+            "detach, run `herdr update`, then run Herdr again to reconnect(中斷連接，執行 `herdr update`，再重新執行 Herdr 以連線)".to_string()
         }
         HOMEBREW_UPDATE_COMMAND => {
-            "detach, run `brew update && brew upgrade herdr`, then run Herdr again to reconnect"
+            "detach, run `brew update && brew upgrade herdr`, then run Herdr again to reconnect(中斷連接，執行 `brew update && brew upgrade herdr`，再重新執行 Herdr 以連線)"
                 .to_string()
         }
         MISE_UPDATE_COMMAND => {
-            "detach, run `mise upgrade herdr`, then run Herdr again to reconnect".to_string()
+            "detach, run `mise upgrade herdr`, then run Herdr again to reconnect(中斷連接，執行 `mise upgrade herdr`，再重新執行 Herdr 以連線)".to_string()
         }
         NIX_UPDATE_COMMAND => {
-            "detach, update through Nix, then run Herdr again to reconnect".to_string()
+            "detach, update through Nix, then run Herdr again to reconnect(中斷連接，透過 Nix 更新，再重新執行 Herdr 以連線)".to_string()
         }
-        command => format!("detach, run `{command}`, then run Herdr again to reconnect"),
+          command => format!("detach, run `{command}`, then run Herdr again to reconnect(中斷連接，執行 `{command}`，再重新執行 Herdr 以連線)"),
     }
 }
 
@@ -2956,15 +2956,15 @@ mod tests {
     fn update_install_instruction_distinguishes_install_from_restart() {
         assert_eq!(
             update_install_instruction(HERDR_UPDATE_COMMAND),
-            "detach, run `herdr update`, then run Herdr again to reconnect"
+            "detach, run `herdr update`, then run Herdr again to reconnect(中斷連接，執行 `herdr update`，再重新執行 Herdr 以連線)"
         );
         assert_eq!(
             update_install_instruction(HOMEBREW_UPDATE_COMMAND),
-            "detach, run `brew update && brew upgrade herdr`, then run Herdr again to reconnect"
+            "detach, run `brew update && brew upgrade herdr`, then run Herdr again to reconnect(中斷連接，執行 `brew update && brew upgrade herdr`，再重新執行 Herdr 以連線)"
         );
         assert_eq!(
             update_install_instruction(MISE_UPDATE_COMMAND),
-            "detach, run `mise upgrade herdr`, then run Herdr again to reconnect"
+            "detach, run `mise upgrade herdr`, then run Herdr again to reconnect(中斷連接，執行 `mise upgrade herdr`，再重新執行 Herdr 以連線)"
         );
     }
 

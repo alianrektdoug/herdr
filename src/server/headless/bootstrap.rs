@@ -96,6 +96,10 @@ pub fn run_server() -> io::Result<()> {
     });
 
     rt.shutdown_timeout(Duration::from_millis(100));
+    // Panes whose consoles are being held open for protected processes
+    // (installers) finish on background threads; exiting before they are done
+    // would close those consoles and interrupt the very work we are guarding.
+    crate::pane::wait_for_deferred_pane_shutdowns();
     crate::logging::shutdown("server");
     result
 }
@@ -208,6 +212,10 @@ fn run_handoff_import_server(socket_path: &Path, token: &str) -> io::Result<()> 
     });
 
     rt.shutdown_timeout(Duration::from_millis(100));
+    // Panes whose consoles are being held open for protected processes
+    // (installers) finish on background threads; exiting before they are done
+    // would close those consoles and interrupt the very work we are guarding.
+    crate::pane::wait_for_deferred_pane_shutdowns();
     crate::logging::shutdown("server");
     result
 }

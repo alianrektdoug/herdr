@@ -30,7 +30,8 @@ fn endpoint_product_announcement_is_client_rendered_modal_and_dismissed_by_ident
         .collect::<Vec<_>>()
         .join("\n");
     assert!(text.contains("A client-owned announcement"));
-    assert!(text.contains("product announcement · v0.8.2"));
+    assert!(text.contains("product announcement"));
+    assert!(text.contains("v0.8.2"));
     assert!(!state.hits.product_announcement_scrollbar.is_empty());
 
     let popup_key = state.handle_input_bytes(b"x");
@@ -316,7 +317,7 @@ fn startup_onboarding_is_client_rendered_and_modal() {
     assert!(text.contains("this is a mouse-first terminal"));
     assert!(text.contains("ctrl+b enters prefix mode"));
     assert!(text.contains("install optional agent integrations"));
-    assert_eq!(state.hits.overlay_primary.width, 12);
+    assert_eq!(state.hits.overlay_primary.width, 18);
 
     let ignored = state.handle_input_bytes(b"x");
     assert!(ignored.requests.is_empty());
@@ -676,10 +677,10 @@ fn update_ready_menu_opens_client_owned_release_notes_and_dismisses_by_version()
     state.set_snapshot(Box::new(endpoint_snapshot.clone()));
     state.set_pane_surface(surface());
     let shell = state.compose(106, 30).expect("shell frame");
-    assert_eq!(state.hits.global_launcher.width, 8);
+    assert_eq!(state.hits.global_launcher.width, 14);
     let launcher = state.hits.global_launcher;
     let shell_buffer = shell.to_ratatui_buffer().expect("shell buffer");
-    let badge_x = launcher.right().saturating_sub(6);
+    let badge_x = launcher.right().saturating_sub(12);
     assert_eq!(
         shell_buffer[(badge_x, launcher.y)].fg,
         state.config.palette.accent
@@ -698,6 +699,10 @@ fn update_ready_menu_opens_client_owned_release_notes_and_dismisses_by_version()
     );
     state.sidebar_collapsed = false;
     state.mode = ClientShellMode::Navigate;
+    state
+        .compose(106, 30)
+        .expect("navigate update status geometry");
+    state.mode_bar_scroll = state.hits.mode_bar_max_scroll;
     let navigate = state.compose(106, 30).expect("navigate update status");
     let navigate_text = navigate
         .cells
@@ -729,9 +734,13 @@ fn update_ready_menu_opens_client_owned_release_notes_and_dismisses_by_version()
         })
         .collect::<Vec<_>>()
         .join("\n");
-    assert!(text.contains("● update ready"));
+    assert!(text.contains("update ready"));
     let update_row = state.hits.global_menu_rows[3].0;
-    assert_eq!(update_row.width, 16);
+    assert!(
+        update_row.width
+            >= (unicode_width::UnicodeWidthStr::width(crate::ui::bilingual("update ready")) as u16)
+                .saturating_add(4)
+    );
     let menu_buffer = menu.to_ratatui_buffer().expect("menu buffer");
     assert_eq!(
         menu_buffer[(update_row.x + 1, update_row.y)].fg,
@@ -891,7 +900,7 @@ fn update_ready_menu_opens_client_owned_release_notes_and_dismisses_by_version()
     installed_surface.projection_revision = 2;
     state.set_pane_surface(installed_surface);
     state.compose(106, 30).expect("installed shell");
-    assert_eq!(state.hits.global_launcher.width, 6);
+    assert_eq!(state.hits.global_launcher.width, 12);
     state.toggle_global_menu();
     let installed = state.compose(106, 30).expect("installed menu");
     let installed_text = installed
@@ -1044,7 +1053,7 @@ fn outdated_integration_badges_launcher_settings_and_settings_tab() {
     state.set_snapshot(Box::new(endpoint_snapshot));
     state.set_pane_surface(surface());
     let shell = state.compose(106, 30).expect("integration attention shell");
-    assert_eq!(state.hits.global_launcher.width, 8);
+    assert_eq!(state.hits.global_launcher.width, 14);
     let shell_text = shell
         .cells
         .iter()
@@ -1069,7 +1078,7 @@ fn outdated_integration_badges_launcher_settings_and_settings_tab() {
         .iter()
         .map(|cell| cell.symbol.as_str())
         .collect::<String>();
-    assert!(settings_text.contains("● integrations"));
+    assert!(settings_text.contains("integrations"));
     let integrations_tab = state
         .hits
         .settings_tabs
@@ -1103,7 +1112,7 @@ fn combined_update_and_integration_attention_preserves_both_badges() {
     state.set_snapshot(Box::new(endpoint_snapshot));
     state.set_pane_surface(surface());
     state.compose(106, 30).expect("combined attention shell");
-    assert_eq!(state.hits.global_launcher.width, 8);
+    assert_eq!(state.hits.global_launcher.width, 14);
 
     state.toggle_global_menu();
     let menu = state.compose(106, 30).expect("combined attention menu");
@@ -1118,6 +1127,10 @@ fn combined_update_and_integration_attention_preserves_both_badges() {
 
     state.overlay = None;
     state.mode = ClientShellMode::Navigate;
+    state
+        .compose(106, 30)
+        .expect("combined attention navigate geometry");
+    state.mode_bar_scroll = state.hits.mode_bar_max_scroll;
     let navigate = state.compose(106, 30).expect("combined attention navigate");
     let navigate_text = navigate
         .cells
@@ -1140,7 +1153,7 @@ fn current_release_notes_use_whats_new_without_attention_badge() {
     state.set_snapshot(Box::new(endpoint_snapshot));
     state.set_pane_surface(surface());
     state.compose(106, 30).expect("shell frame");
-    assert_eq!(state.hits.global_launcher.width, 6);
+    assert_eq!(state.hits.global_launcher.width, 12);
     state.toggle_global_menu();
     let menu = state.compose(106, 30).expect("what's new menu");
     let text = menu
@@ -1249,6 +1262,43 @@ fn client_settings_preview_restore_and_endpoint_integrations_are_owned_by_overla
     assert!(text.contains("update available"));
     assert!(text.contains("not found"));
     assert!(!text.contains("pane labels"));
+
+    assert!(state.hits.settings_max_horizontal_scroll > 0);
+    let settings_track = state.hits.settings_scroll_track;
+    assert!(!settings_track.is_empty());
+    let drag_start =
+        state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: settings_track.x,
+            row: settings_track.y,
+            modifiers: KeyModifiers::empty(),
+        })]);
+    assert!(drag_start.repaint);
+    assert!(matches!(
+        state.chrome_drag,
+        Some(ClientChromeDrag::SettingsScrollbar)
+    ));
+    let drag = state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {
+        kind: MouseEventKind::Drag(MouseButton::Left),
+        column: settings_track.right().saturating_sub(1),
+        row: settings_track.y,
+        modifiers: KeyModifiers::empty(),
+    })]);
+    assert!(drag.repaint);
+    assert!(matches!(
+        state.overlay,
+        Some(ClientShellOverlay::Settings(ClientSettingsOverlay {
+            horizontal_scroll,
+            ..
+        })) if horizontal_scroll == state.hits.settings_max_horizontal_scroll
+    ));
+    state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {
+        kind: MouseEventKind::Up(MouseButton::Left),
+        column: settings_track.right().saturating_sub(1),
+        row: settings_track.y,
+        modifiers: KeyModifiers::empty(),
+    })]);
+    assert!(state.chrome_drag.is_none());
 
     let popup = state.hits.settings_popup;
     let blank_click =

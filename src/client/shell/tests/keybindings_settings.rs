@@ -371,8 +371,52 @@ detach = "prefix+x"
         })
         .collect::<Vec<_>>()
         .join("\n");
-    assert!(text.contains("PREFIX"), "frame: {text:?}");
+    assert!(text.contains("PREFIX("), "frame: {text:?}");
+    assert!(text.contains("cancel("), "frame: {text:?}");
+    assert!(text.contains("send prefix("), "frame: {text:?}");
     assert!(text.contains("ctrl+a"), "frame: {text:?}");
+    assert!(state.hits.mode_bar_max_scroll > 0);
+    assert!(!state.hits.mode_bar_scroll_track.is_empty());
+
+    let scroll =
+        state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {
+            kind: MouseEventKind::ScrollDown,
+            column: state.hits.mode_bar.x,
+            row: state.hits.mode_bar.y,
+            modifiers: KeyModifiers::empty(),
+        })]);
+    assert!(scroll.repaint);
+    assert_eq!(state.mode_bar_scroll, 4);
+    state.compose(106, 20).expect("scrolled prefix frame");
+
+    let track = state.hits.mode_bar_scroll_track;
+    let drag_start =
+        state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: track.x,
+            row: track.y,
+            modifiers: KeyModifiers::empty(),
+        })]);
+    assert!(drag_start.repaint);
+    assert!(matches!(
+        state.chrome_drag,
+        Some(ClientChromeDrag::ModeBarScrollbar)
+    ));
+    let drag = state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {
+        kind: MouseEventKind::Drag(MouseButton::Left),
+        column: track.right().saturating_sub(1),
+        row: track.y,
+        modifiers: KeyModifiers::empty(),
+    })]);
+    assert!(drag.repaint);
+    assert_eq!(state.mode_bar_scroll, state.hits.mode_bar_max_scroll);
+    state.handle_raw_events(vec![RawInputEvent::Mouse(crossterm::event::MouseEvent {
+        kind: MouseEventKind::Up(MouseButton::Left),
+        column: track.right().saturating_sub(1),
+        row: track.y,
+        modifiers: KeyModifiers::empty(),
+    })]);
+    assert!(state.chrome_drag.is_none());
 
     let detach = state.handle_input_bytes(b"x");
     assert!(detach.detach);

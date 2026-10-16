@@ -529,6 +529,7 @@ impl App {
             outer_terminal_focus: None,
             prefix_keys,
             headless_size: config.headless_size(),
+            stop_server_on_last_detach: config.server.stop_on_last_detach,
             agent_panel_sort,
             agent_view_override: None,
             sidebar_agents: config.ui.sidebar.agents.clone(),
@@ -961,6 +962,7 @@ impl App {
             } else {
                 self.state.headless_size = config.headless_size();
             }
+            self.state.stop_server_on_last_detach = config.server.stop_on_last_detach;
         }
 
         if !invalid_section("advanced") {

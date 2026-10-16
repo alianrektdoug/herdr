@@ -837,6 +837,12 @@ pub fn signal_processes(pids: &[u32], signal: Signal) {
     }
 }
 
+/// Processes that must outlive pane shutdown. Unix delivers catchable
+/// signals, so nothing needs to be held back here.
+pub fn shutdown_hold_pids(_child_pid: u32) -> Vec<u32> {
+    Vec::new()
+}
+
 pub fn process_exists(pid: u32) -> bool {
     if pid == 0 {
         return false;

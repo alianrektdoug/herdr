@@ -21,8 +21,14 @@ fn navigate_update_status_uses_released_desktop_and_mobile_placement() {
             .map(|cell| cell.symbol.as_str())
             .collect::<String>()
     };
-    assert!(row_text(&bottom, 29).contains("update ready"));
+    assert!(!row_text(&bottom, 29).contains("update ready"));
     assert!(!row_text(&bottom, 28).contains("update ready"));
+    assert!(state.hits.mode_bar_max_scroll > 0);
+    state.mode_bar_scroll = state.hits.mode_bar_max_scroll;
+    let bottom_scrolled = state
+        .compose(106, 30)
+        .expect("horizontally scrolled bottom-tab update shell");
+    assert!(row_text(&bottom_scrolled, 29).contains("update ready"));
     assert!(state.hits.tabs.is_empty());
     assert!(state.hits.new_tab.is_empty());
     assert!(state.hits.tab_scroll_left.is_empty());
@@ -219,10 +225,10 @@ fn mobile_header_and_switcher_render_released_sections_and_stable_targets() {
         .map(|cell| cell.symbol.as_str())
         .collect::<String>();
     assert!(header_text.contains("client-shell"));
-    assert!(header_text.contains("tab 1"));
+    assert!(header_text.contains("tab("));
     assert!(header_text.contains("blocked"));
     assert!(header_text.contains("switch"));
-    assert_eq!(state.hits.mobile_switch, Rect::new(34, 0, 10, 2));
+    assert_eq!(state.hits.mobile_switch, Rect::new(32, 0, 12, 2));
 
     let click = |rect: Rect| {
         RawInputEvent::Mouse(crossterm::event::MouseEvent {
@@ -400,7 +406,8 @@ fn mobile_background_workspace_uses_its_own_active_tab_status() {
         })
         .collect::<Vec<_>>()
         .join("\n");
-    assert!(text.contains("feature · tab two · 2/2"), "{text}");
+    assert!(text.contains("feature · tab("), "{text}");
+    assert!(text.contains("two · 2/2"), "{text}");
     assert!(text.contains("2 · logs"), "{text}");
     assert!(!text.contains("7 · logs"), "{text}");
 }

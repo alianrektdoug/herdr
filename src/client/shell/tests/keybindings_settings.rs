@@ -698,7 +698,8 @@ fn unavailable_endpoint_method_is_disabled_without_disconnect() {
         .expect("unsupported action notice");
     assert_eq!(notice.key.kind, ClientEndpointNoticeKind::Unsupported);
     assert_eq!(notice.key.code, "workspace.focus");
-    assert!(notice.body.contains("This server"));
+    // 本 fork 把這則通知內文改用純中文（英文加中文 162 寬會覆蓋側邊欄）
+    assert!(notice.body.contains("此伺服器"));
     assert!(state.endpoint_error.is_none());
 
     let mut repeated = ClientShellInput::default();
@@ -874,7 +875,7 @@ fn custom_binding_missing_from_endpoint_manifest_is_not_forwarded() {
     assert!(state
         .endpoint_error
         .as_deref()
-        .is_some_and(|error| error.contains("not available")));
+        .is_some_and(|error| error.contains("無法使用")));
 }
 
 #[test]

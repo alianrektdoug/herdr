@@ -202,7 +202,7 @@ impl ClientShellState {
                 });
                 let Some(command_id) = command_id else {
                     self.set_endpoint_error(
-                        "custom command is not available on this endpoint; reload configuration(此端點無法使用自訂指令；請重新載入設定)",
+                        "此端點無法使用自訂指令；請重新載入設定",
                     );
                     outcome.repaint = true;
                     return;
@@ -383,7 +383,7 @@ impl ClientShellState {
                 method_name.clone(),
                 "Action unavailable(動作無法使用)",
                 format!(
-                    "This server does not support {method_name} yet. Update and restart it to enable this action.(此伺服器尚不支援 {method_name}。請更新並重新啟動伺服器以啟用此動作。)"
+                    "此伺服器尚不支援 {method_name}。請更新並重新啟動伺服器以啟用此動作。"
                 ),
             );
             return false;
@@ -485,7 +485,7 @@ impl ClientShellState {
             request_id,
             Err(ClientShellEndpointError {
                 code: Some("endpoint_cancelled".into()),
-                message: "This server action was interrupted. Check its state before retrying.(此伺服器動作已中斷，重試前請先確認其狀態。)"
+                message: "此伺服器動作已中斷，重試前請先確認其狀態。"
                     .into(),
             }),
         );

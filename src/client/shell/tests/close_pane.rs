@@ -94,7 +94,7 @@ fn last_pane_close_waits_for_keyboard_or_mouse_confirmation() {
         ));
         let frame = state.compose(106, 24).unwrap();
         let text = frame_rows(&frame).join("\n");
-        assert!(text.contains("Close workspace?(關閉工作區？)"));
+        assert!(text.contains("Close workspace?"));
         assert!(text.contains("1 pane"));
         let accepted = if menu {
             let primary = state.hits.overlay_primary;

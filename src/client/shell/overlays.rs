@@ -758,10 +758,13 @@ fn render_navigator_overlay(
         .count();
     let count = format!(
         "{terminal_count} {}",
+        // 計數顯示在 popup 右上角，寬度最吃緊：加上中文會讓
+        // text_editor 的可用寬度（i.width - 4 - count 寬）歸零，
+        // 窄視窗下搜尋游標整個消失。數字才是主體，單位保持英文。
         if terminal_count == 1 {
-            "terminal(終端機)"
+            "terminal"
         } else {
-            "terminals(終端機)"
+            "terminals"
         }
     );
     put_text(

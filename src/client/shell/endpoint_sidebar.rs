@@ -620,6 +620,26 @@ fn render_endpoint_row(
     } else {
         format!("{glyph} {state}")
     };
+    // 本 fork 的狀態文字是 `English(中文)` 形式，比上游長 8-12 個顯示寬度。
+    // 侧邊欄窄時會把折疊箭頭與機器名稱的空間吃光（saturating_sub 歸零），
+    // 因此空間不足時改只顯示符號：箭頭和機器名比狀態文字重要。
+    let signal = {
+        let needed = display_width(&format!(" {marker} {}", endpoint.label));
+        let fits = |s: &str| {
+            display_width(s).saturating_add(needed).saturating_add(1) <= rect.width
+        };
+        if fits(&signal) || glyph.is_empty() {
+            signal
+        } else {
+            // 退成上游的純英文形式（去掉 `(中文)` 後綴），仍不夠才只留符號。
+            let ascii = format!("{glyph} {}", state.split('(').next().unwrap_or(state));
+            if fits(&ascii) {
+                ascii
+            } else {
+                glyph.to_owned()
+            }
+        }
+    };
     let signal_width = display_width(&signal).min(rect.width);
     put_text(
         buffer,

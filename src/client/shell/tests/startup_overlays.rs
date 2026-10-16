@@ -315,7 +315,10 @@ fn startup_onboarding_is_client_rendered_and_modal() {
         .join("\n");
     assert!(text.contains("terminal workspace manager for coding agents"));
     assert!(text.contains("this is a mouse-first terminal"));
-    assert!(text.contains("ctrl+b enters prefix mode"));
+    // 本 fork 把這一行的說明改用純中文（見 ui/onboarding.rs 的註解），
+    // frame 裡全形字每字後跟一個空白 cell，無法比對連續中文，
+    // 改為驗證顯示的 prefix 鍵名本身。
+    assert!(text.contains("ctrl+b 進"));
     assert!(text.contains("install optional agent integrations"));
     assert_eq!(state.hits.overlay_primary.width, 18);
 
@@ -365,9 +368,10 @@ fn startup_onboarding_shows_configured_prefix() {
         .iter()
         .map(|cell| cell.symbol.as_str())
         .collect::<String>();
-    assert!(text.contains("ctrl+shift+b enters prefix mode"));
-    assert!(text.contains("shows keybinds and settings"));
-    assert!(!text.contains("ctrl+b enters prefix mode"));
+    assert!(text.contains("ctrl+shift+b 進"));
+    // 本 fork 把這一行的說明文字改用純中文（見 onboarding.rs 的註解），
+    // 故改為驗證「顯示的是設定的 prefix」這個測試本意。
+    assert!(!text.contains("ctrl+b 進"));
 }
 
 #[test]
